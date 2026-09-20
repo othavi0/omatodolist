@@ -1,29 +1,19 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
-import Quickshell
 import qs.Commons
 import qs.Ui
 import "data" as Data
 import "ui" as Ui
 
-// Scratchpad popup: "Items" (notes + todos) and "History" tabs. MainTab +
-// HistoryTab + the Toast live here (not in the tabs) so every cross-
-// component reference resolves through this file's "ui" directory import.
 Panel {
     id: root
     moduleName: "io.github.darksurferza.omatodolist"
-    // IPC: BarWidget.qml owns the `scratchpad` handler (open/close/show/hide/
-    // toggle; Phase 4 adds clearHistory + the data API). The kit Panel's own
-    // IpcHandler also registers the same target (Quickshell registers it even
-    // with manageIpc:false / empty ipcTarget) — the shell logs a "will not be
-    // used" warning against BarWidget's handler, exactly like every other
-    // kit-based plugin including omaplug and the first-party panels. It is
-    // benign while both handlers dispatch to the same open/close/toggle
-    // functions; Phase 4 must implement the richer API on the winning handler
-    // (the Panel-side one).
+    // BarWidget.qml owns the `scratchpad` IPC handler. The kit Panel also
+    // registers the same target, so the shell's "will not be used" warning
+    // against BarWidget's handler here is benign (both dispatch to the same
+    // open/close/toggle functions).
     ipcTarget: "scratchpad"
     manageIpc: false
 
@@ -31,8 +21,8 @@ Panel {
     property var hostWidget: null
     readonly property var barIdentity: hostWidget || root
 
-    // Data layer (Phase 1). Own instance + file watcher (spec §4); reopening
-    // the panel re-loads as a safety net on top of the watcher.
+    // Own instance + file watcher; reopening the panel re-loads as a safety
+    // net on top of the watcher.
     Data.Db {
         id: db
         Component.onCompleted: db.init()
@@ -119,7 +109,7 @@ Panel {
                     onCloseRequested: root.close()
                 }
 
-                // History — read-only mutation log (spec §3.3).
+                // History — read-only mutation log.
                 Ui.HistoryTab {
                     id: historyTab
                     db: db

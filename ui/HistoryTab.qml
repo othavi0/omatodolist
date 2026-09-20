@@ -4,26 +4,15 @@ import QtQuick
 import QtQuick.Layouts
 import qs.Commons
 import "Icons.js" as Icons
+import "Item.js" as ItemJs
 
 // "History" tab: a read-only mutation log rendered as a table of
 // `type | title | action | timestamp` rows (newest-first, from db.history).
-// The title and row count live in Panel's tab Segment now, not in here.
-// The Toast is owned by Panel.qml and injected here (components in this
-// "ui" directory reference each other by type name).
-//
-// Keyboard map:
-//   j/k or ↑/↓  move selection
-//   d           delete the selected row (double-press within 2s to confirm)
-//   c           clear the whole history (same as the "Clear history" button)
-//   Esc         cancel an armed delete, otherwise close the panel
-//
-// Focus model: `pump` owns keyboard focus; mouse clicks select a row and
-// return focus to the list. Deletion/clear confirmations surface as toasts,
-// and errors from the data layer do too.
+// Title and row count live in Panel's tab Segment, not here. The Toast is
+// owned by Panel.qml and injected here.
 Item {
     id: root
 
-    // ------------------------------------------------------------------ deps
     property QtObject db: null              // Panel's Data.Db instance
     property var toast: null                // ui/Toast instance (Panel-owned)
     property color foreground: Color.foreground
@@ -31,15 +20,13 @@ Item {
 
     signal closeRequested()                 // Esc in the list closes the panel
 
-    // ------------------------------------------------------------------ state
     property int selectedId: -1
     property int deleteArmId: -1            // -1 = not armed
     readonly property bool deleteArmed: root.deleteArmId >= 0
     readonly property bool clearButtonEnabled: root.db ? root.db.history.length > 0 : false
 
-    // ------------------------------------------------------------------ derived
     readonly property var rowList: root.db ? (root.db.history || []) : []
-    readonly property int selectedIndex: root.indexOfId(root.rowList, root.selectedId)
+    readonly property int selectedIndex: ItemJs.indexOfId(root.rowList, root.selectedId)
     readonly property var selectedRow: root.selectedIndex >= 0 ? root.rowList[root.selectedIndex] : null
 
     // Column widths shared by the header and every delegate so cells stay in
@@ -48,14 +35,8 @@ Item {
     readonly property int colActionW: Style.space(76)
     readonly property int colTsW: Style.space(128)
 
-    function indexOfId(rows, id) {
-        var list = rows || []
-        for (var i = 0; i < list.length; ++i)
-            if (Number(list[i].id) === Number(id)) return i
-        return -1
-    }
 
-    // Unix seconds -> "YYYY-MM-DD HH:MM" (spec §3.3 table example).
+    // Unix seconds -> "YYYY-MM-DD HH:MM".
     function formatTs(ts) {
         var n = Number(ts)
         if (!isFinite(n) || n <= 0) return "--"
@@ -73,14 +54,12 @@ Item {
         return Util.alpha(root.foreground, 0.75)
     }
 
-    // ------------------------------------------------------------------ focus
     function focusList() { pump.forceActiveFocus() }
     function resetFocus() {
         root.cancelDelete()
         root.focusList()
     }
 
-    // ------------------------------------------------------------------ navigation
     function moveSelection(delta) {
         var rows = root.rowList
         var n = rows.length
@@ -92,7 +71,6 @@ Item {
         listView.positionViewAtIndex(next, ListView.Center)
     }
 
-    // ------------------------------------------------------------------ actions
     function armDelete() {
         if (!root.db || !root.selectedRow) return
         if (root.deleteArmed && root.deleteArmId === root.selectedId) {
@@ -115,7 +93,6 @@ Item {
         root.db.clearHistory()
     }
 
-    // ------------------------------------------------------------------ keys
     function onKey(event) {
         if (event.key === Qt.Key_Down || event.key === Qt.Key_J || event.text === "j") {
             root.moveSelection(1); event.accepted = true
@@ -131,8 +108,8 @@ Item {
         }
     }
 
-    // Keep a valid selection after refreshes (watcher/via db, spec §4): when
-    // the deleted/cleared row is gone, fall back to the newest row.
+    // Keep a valid selection after refreshes (watcher/via db): when the
+    // deleted/cleared row is gone, fall back to the newest row.
     function onHistoryChanged() {
         var rows = root.rowList
         if (rows.length === 0) {
@@ -140,13 +117,12 @@ Item {
             root.cancelDelete()
             return
         }
-        if (root.indexOfId(rows, root.selectedId) < 0) {
+        if (ItemJs.indexOfId(rows, root.selectedId) < 0) {
             root.selectedId = rows[0].id
             if (root.selectedIndex >= 0) listView.positionViewAtIndex(root.selectedIndex, ListView.Center)
         }
     }
 
-    // ------------------------------------------------------------------ focus owner
     Item {
         id: pump
         anchors.fill: parent
@@ -154,7 +130,6 @@ Item {
         Keys.onPressed: function(event) { root.onKey(event) }
     }
 
-    // ------------------------------------------------------------------ layout
     ColumnLayout {
         anchors.fill: parent
         spacing: Style.spacing.sm
@@ -272,7 +247,6 @@ Item {
             }
         }
 
-        // -------- footer ---------------------------------------------------
         Rectangle {
             Layout.fillWidth: true
             height: 1
@@ -311,12 +285,11 @@ Item {
         onTriggered: root.deleteArmId = -1
     }
 
-    // ------------------------------------------------------------------ db sync
     Connections {
         target: root.db
         function onHistoryChanged() { root.onHistoryChanged() }
         function onHistoryRowDeleted(id) {
-            var idx = root.indexOfId(root.rowList, Number(id))
+            var idx = ItemJs.indexOfId(root.rowList, Number(id))
             var title = idx >= 0 ? root.rowList[idx].title : "entry"
             if (root.toast) root.toast.show("Deleted — " + title)
         }

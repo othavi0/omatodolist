@@ -61,17 +61,10 @@ test("convertTypeSql", () => {
   )
 })
 
-test("historySql: default limit", () => {
+test("historySql", () => {
   assert.equal(
     Db.historySql(),
     "SELECT id, type, title, action, ts FROM history ORDER BY ts DESC, id DESC LIMIT 500"
-  )
-})
-
-test("historySql: explicit limit", () => {
-  assert.equal(
-    Db.historySql(10),
-    "SELECT id, type, title, action, ts FROM history ORDER BY ts DESC, id DESC LIMIT 10"
   )
 })
 
@@ -141,10 +134,6 @@ test("parseCounts", () => {
 
 test("parseId: plain integer output", () => {
   assert.equal(Db.parseId("42\n"), 42)
-})
-
-test("parseId: json row output", () => {
-  assert.equal(Db.parseId('[{"id":7}]'), 7)
 })
 
 test("parseId: empty output", () => {

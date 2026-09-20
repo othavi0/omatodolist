@@ -71,14 +71,8 @@ Item {
         root.refillEditor()
     }
 
-    function indexOfId(items, id) {
-        var list = items || []
-        for (var i = 0; i < list.length; ++i)
-            if (Number(list[i].id) === Number(id)) return i
-        return -1
-    }
     readonly property var itemList: root.db ? (root.db.items || []) : []
-    readonly property int selectedIndex: root.indexOfId(root.itemList, root.selectedId)
+    readonly property int selectedIndex: ItemJs.indexOfId(root.itemList, root.selectedId)
     readonly property var selectedItem: root.selectedIndex >= 0 ? root.itemList[root.selectedIndex] : null
     readonly property bool _filtered: root.filterType !== "all" || root.searchText.trim() !== ""
 
@@ -139,7 +133,7 @@ Item {
     // Resolved from selectedId + itemList rather than the selectedItem
     // binding, which lags by one step inside onSelectedIdChanged.
     function refillEditor() {
-        var idx = root.indexOfId(root.itemList, root.selectedId)
+        var idx = ItemJs.indexOfId(root.itemList, root.selectedId)
         editorPane.openItem(idx >= 0 ? root.itemList[idx] : null)
     }
 
@@ -418,13 +412,13 @@ Item {
     function onItemsSynced() {
         if (root.draftNew) return
         var items = root.itemList
-        if (root._selectAfterReload >= 0 && root.indexOfId(items, root._selectAfterReload) >= 0) {
+        if (root._selectAfterReload >= 0 && ItemJs.indexOfId(items, root._selectAfterReload) >= 0) {
             root.selectedId = root._selectAfterReload
             root._selectAfterReload = -1
             listView.positionViewAtIndex(root.selectedIndex, ListView.Center)
         }
         var refill = !root.editorFocused && !editorPane.dirty
-        if (root.indexOfId(items, root.selectedId) >= 0) {
+        if (ItemJs.indexOfId(items, root.selectedId) >= 0) {
             if (refill) root.refillEditor()
             return
         }
@@ -448,7 +442,7 @@ Item {
             root.toast.show(ItemJs.statusToast(item, status))
         }
         function onTypeChanged(id) {
-            var idx = root.indexOfId(root.itemList, Number(id))
+            var idx = ItemJs.indexOfId(root.itemList, Number(id))
             if (idx < 0 || !root.toast) return
             var before = root.itemList[idx]
             var newType = ItemJs.isTodo(before) ? "note" : "todo"
@@ -460,7 +454,7 @@ Item {
             deleteArmTimer.stop()
             if (root.toast) root.toast.show("Deleted")
             var items = root.itemList
-            var idx = root.indexOfId(items, Number(id))
+            var idx = ItemJs.indexOfId(items, Number(id))
             root.selectedId = idx + 1 < items.length ? items[idx + 1].id
                 : (idx - 1 >= 0 ? items[idx - 1].id : -1)
         }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { loadQmlLib } from "./lib/load-qml-lib.mjs"
 
 const Item = loadQmlLib(new URL("../ui/Item.js", import.meta.url), [
-  "isTodo", "isDone", "statusLabel", "toggleVerb", "statusToast", "relativeAge"
+  "isTodo", "isDone", "statusLabel", "toggleVerb", "statusToast", "relativeAge", "indexOfId"
 ])
 
 const noteUnread = { type: "note", status: 0, title: "Ideas" }
@@ -68,4 +68,12 @@ test("relativeAge: past 30 days falls back to a date", () => {
   const pad = (n) => (n < 10 ? "0" : "") + n
   const expected = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
   assert.equal(Item.relativeAge(ts, now), expected)
+})
+
+test("indexOfId finds a row by id, comparing numbers and numeric strings alike", () => {
+  const rows = [{ id: 7 }, { id: "12" }, { id: 3 }]
+  assert.equal(Item.indexOfId(rows, 12), 1)
+  assert.equal(Item.indexOfId(rows, "3"), 2)
+  assert.equal(Item.indexOfId(rows, 99), -1)
+  assert.equal(Item.indexOfId(null, 1), -1)
 })
