@@ -200,7 +200,6 @@ Item {
                 keyNavigationEnabled: false
                 spacing: Style.spacing.xxs
                 model: root.rowList
-                currentIndex: root.selectedIndex
 
                 delegate: Rectangle {
                     required property var modelData
@@ -208,7 +207,7 @@ Item {
                     width: listView.width
                     height: rowRow.implicitHeight + Style.space(10)
                     radius: Style.cornerRadius
-                    color: index === listView.currentIndex
+                    color: Number(modelData.id) === root.selectedId
                         ? Style.selectedFillFor(root.foreground, root.accent)
                         : "transparent"
 
@@ -224,7 +223,7 @@ Item {
                         Text {
                             Layout.preferredWidth: root.colTypeW
                             text: modelData.type === "todo" ? Icons.boxOff : Icons.note
-                            color: index === listView.currentIndex
+                            color: Number(modelData.id) === root.selectedId
                                 ? Style.selectedStateColor(root.foreground, root.accent)
                                 : Util.alpha(root.foreground, 0.75)
                             font.family: Style.font.family
@@ -235,7 +234,7 @@ Item {
                             Layout.fillWidth: true
                             text: modelData.title
                             elide: Text.ElideRight
-                            color: index === listView.currentIndex
+                            color: Number(modelData.id) === root.selectedId
                                 ? Style.selectedStateColor(root.foreground, root.accent)
                                 : root.foreground
                             font.family: Style.font.family

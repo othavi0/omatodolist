@@ -325,14 +325,12 @@ Item {
                         keyNavigationEnabled: false
                         spacing: Style.spacing.xxs
                         model: root.itemList
-                        currentIndex: root.selectedIndex
 
                         delegate: ItemRow {
                             required property var modelData
-                            required property int index
                             width: listView.width
                             item: modelData
-                            selected: index === listView.currentIndex && !root.draftNew
+                            selected: Number(modelData.id) === root.selectedId && !root.draftNew
                             foreground: root.foreground
                             accent: root.accent
                             nowSeconds: root.nowSeconds

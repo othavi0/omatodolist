@@ -20,6 +20,7 @@ ShellRoot {
     function() { mainTab.pickItem(2); mainTab.focusEditor() },
     function() { mainTab.editorTitle = "EDITED-RENEW"; mainTab.pickItem(3) },
     function() { mainTab.commitIfDirty() },
+    function() { console.log("HIGHLIGHTED " + sr.highlighted(mainTab).join(",")) },
 
     function() { mainTab.pickItem(4); mainTab.focusEditor() },
     function() { mainTab.editorTitle = "EDITED-COFFEE"; mainTab.focusSearch() },
@@ -35,6 +36,13 @@ ShellRoot {
 
     function() { mainTab.pickItem(5); mainTab.convertSelected() }
   ]
+
+  function highlighted(item) {
+    var ids = []
+    if (String(item).indexOf("ItemRow") === 0 && item.selected) ids.push(item.item.id)
+    for (var i = 0; i < item.children.length; ++i) ids = ids.concat(sr.highlighted(item.children[i]))
+    return ids
+  }
 
   Data.Db {
     id: db
@@ -74,6 +82,8 @@ expect "edit is saved to the item it was typed in when another row is clicked" \
   "SELECT title FROM items WHERE id = 2" "EDITED-RENEW"
 expect "the clicked row keeps its own title" \
   "SELECT title FROM items WHERE id = 3" "Reply to upstream PR review"
+if rg -q "HIGHLIGHTED 3$" "$cfg_dir/qs.log"; then echo "ok   only the clicked row is highlighted after the save reloads the list"
+else echo "FAIL highlight after reload: $(rg -o 'HIGHLIGHTED.*' "$cfg_dir/qs.log" || echo none)"; failures=$((failures + 1)); fi
 expect "edit is saved when focus moves to the search field" \
   "SELECT title FROM items WHERE id = 4" "EDITED-COFFEE"
 expect "draft is saved when the panel closes" \
