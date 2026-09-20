@@ -8,7 +8,6 @@ import qs.Commons
 import qs.Ui
 import "data" as Data
 import "ui" as Ui
-import "ui/Icons.js" as Icons
 
 // Scratchpad popup: "Items" (notes + todos) and "History" tabs. MainTab +
 // HistoryTab + the Toast live here (not in the tabs) so every cross-
@@ -95,41 +94,15 @@ Panel {
             anchors.margins: Style.space(16)
             spacing: Style.space(12)
 
-            RowLayout {
+            Ui.PanelHeader {
                 Layout.fillWidth: true
-                spacing: Style.spacing.xxl
-
-                Ui.Segment {
-                    Layout.preferredWidth: Style.space(260)
-                    options: [
-                        { value: "items", label: "Items", icon: Icons.all, count: db.totalNotes + db.totalTodos },
-                        { value: "history", label: "History", icon: Icons.history, count: db.history.length }
-                    ]
-                    value: root.activeTab === 0 ? "items" : "history"
-                    foreground: root.contentForeground
-                    onPicked: function(v) { root.activeTab = v === "items" ? 0 : 1 }
-                }
-
-                Item { Layout.fillWidth: true }
-
-                Text {
-                    text: db.unreadNotes + " unread · " + db.inProgressTodos + " open"
-                    color: Util.alpha(root.contentForeground, 0.62)
-                    font.family: Style.font.family
-                    font.pixelSize: Style.font.bodySmall
-                }
-
-                Ui.ActionButton {
-                    bordered: true
-                    selected: true
-                    iconText: Icons.plus
-                    text: "New"
-                    tooltipText: "New item (n)"
-                    foreground: root.contentForeground
-                    onClicked: {
-                        root.activeTab = 0
-                        mainTab.startNew("note")
-                    }
+                db: db
+                activeTab: root.activeTab
+                foreground: root.contentForeground
+                onTabPicked: function(index) { root.activeTab = index }
+                onNewRequested: {
+                    root.activeTab = 0
+                    mainTab.startNew("note")
                 }
             }
 
