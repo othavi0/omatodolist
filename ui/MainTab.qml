@@ -220,10 +220,9 @@ Item {
         root.focusList()
     }
 
-    // Auto-save for the exits the field key handlers never see: the panel
-    // closing (click outside, bar icon, IPC) and a tab switch. Dirtiness is
-    // read off the fields rather than activeFocus, because closing the panel
-    // drops keyboard focus before this runs.
+    // Dirtiness is read off the fields rather than activeFocus: closing the
+    // panel releases keyboard focus (WlrLayershell keyboard ownership follows
+    // `open` — see KeyboardPanel.qml) before this function runs.
     function commitIfDirty() {
         var dirty = root.draftNew
             || (!!root.selectedItem

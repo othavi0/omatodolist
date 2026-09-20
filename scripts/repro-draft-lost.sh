@@ -1,15 +1,7 @@
 #!/usr/bin/env bash
-# Drives the live panel through the shell's IPC target and a virtual keyboard,
-# then asserts the draft reached the database.
-#
-# The editor only commits from its own field key handlers, so every other exit
-# (panel closed by a click outside, by the bar icon, by IPC, or by a tab
-# switch) used to drop the draft. This script covers the IPC close, which needs
-# no pointer, and the Enter-in-body path that already worked.
-#
-# Requires: a running omarchy shell with the plugin enabled, wtype, sqlite3,
-# and the panel left on the "Notes & Todos" tab (the active tab survives a
-# close, and `n` does nothing on History).
+# Leave the panel on the "Notes & Todos" tab before running: the active tab
+# survives a close, `n` does nothing on History, and the script cannot read
+# which tab is up.
 
 set -euo pipefail
 

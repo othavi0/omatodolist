@@ -38,10 +38,6 @@ Panel {
         id: db
         Component.onCompleted: db.init()
     }
-    // Closing is an exit from the editor like Tab or Esc, so it has to commit:
-    // every close path (click outside, the bar icon, IPC, a popout switch)
-    // funnels through the kit controller and lands here, and MainTab's own key
-    // handlers never see any of them.
     onOpenedChanged: {
         if (!root.opened) {
             mainTab.commitIfDirty()
