@@ -10,6 +10,7 @@ Flow {
   id: root
   property var hints: []
   property color foreground: Color.foreground
+  property bool urgent: false
   spacing: Style.space(14)
 
   Repeater {
@@ -18,7 +19,7 @@ Flow {
       required property var modelData
       k: modelData[0]
       l: modelData[1]
-      foreground: root.foreground
+      foreground: root.urgent ? Color.urgent : root.foreground
     }
   }
 }
