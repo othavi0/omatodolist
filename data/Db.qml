@@ -40,6 +40,8 @@ QtObject {
     property var history: []                   // historyList() results
     property int unreadNotes: 0                // notes with status 0
     property int inProgressTodos: 0            // todos with status 0
+    property int totalNotes: 0                 // all notes, unfiltered
+    property int totalTodos: 0                 // all todos, unfiltered
 
     // Last list() filter, remembered so load() can re-fetch the same subset
     // after a change (the panel sets these in Phase 2).
@@ -54,6 +56,7 @@ QtObject {
     signal added(int id)
     signal statusChanged(int id, int status)
     signal updated(int id)
+    signal typeChanged(int id)
     signal itemDeleted(int id)
     signal historyRowDeleted(int id)
     signal historyCleared()
@@ -82,6 +85,8 @@ QtObject {
             var c = Db.parseCounts(countsStdout.text)
             root.unreadNotes = c.unreadNotes
             root.inProgressTodos = c.inProgressTodos
+            root.totalNotes = c.notes
+            root.totalTodos = c.todos
             root.countsUpdated()
         }
     }
@@ -150,6 +155,7 @@ QtObject {
                 if (kind === "add") root.added(Db.parseId(writeStdout.text))
                 else if (kind === "setStatus") root.statusChanged(args.id, args.status)
                 else if (kind === "update") root.updated(args.id)
+                else if (kind === "convertType") root.typeChanged(args.id)
                 else if (kind === "deleteItem") root.itemDeleted(args.id)
                 else if (kind === "deleteHistory") root.historyRowDeleted(args.id)
                 else if (kind === "clearHistory") root.historyCleared()
@@ -275,6 +281,12 @@ QtObject {
             return
         }
         root._write("update", Db.updateSql(id, t, body), { id: Number(id) })
+    }
+
+    // Flip an item's type (note<->todo) + "converted" history. Emits typeChanged(id).
+    function convertType(id) {
+        if (!root.ready) return
+        root._write("convertType", Db.convertTypeSql(id), { id: Number(id) })
     }
 
     // Permanently delete an item + "deleted" history. Emits itemDeleted(id).

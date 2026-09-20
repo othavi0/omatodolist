@@ -4,8 +4,9 @@ import { loadQmlLib } from "./lib/load-qml-lib.mjs"
 
 const Db = loadQmlLib(new URL("../data/Db.js", import.meta.url), [
   "q", "likeEscape", "now", "listSql", "countsSql", "addSql", "setStatusSql",
-  "updateSql", "deleteItemSql", "historySql", "deleteHistorySql", "clearHistorySql",
-  "SCHEMA", "sqliteCommand", "initCommand", "parseRows", "parseCounts", "parseId"
+  "updateSql", "deleteItemSql", "convertTypeSql", "historySql", "deleteHistorySql",
+  "clearHistorySql", "SCHEMA", "sqliteCommand", "initCommand", "parseRows", "parseCounts",
+  "parseId"
 ])
 
 function withFixedNow(ms, fn) {
@@ -32,17 +33,31 @@ test("listSql: type filter only", () => {
   )
 })
 
-test("listSql: query filters on title", () => {
+test("listSql: query matches title or body", () => {
   assert.equal(
     Db.listSql("all", "cafe"),
-    "SELECT id, type, title, body, status, created_at, updated_at FROM items WHERE title LIKE '%cafe%' ESCAPE '\\' ORDER BY status ASC, updated_at DESC, id DESC"
+    "SELECT id, type, title, body, status, created_at, updated_at FROM items "
+      + "WHERE (title LIKE '%cafe%' ESCAPE '\\' OR body LIKE '%cafe%' ESCAPE '\\') "
+      + "ORDER BY status ASC, updated_at DESC, id DESC"
   )
 })
 
-test("countsSql: unread notes and in-progress todos only", () => {
+test("countsSql: unread/in-progress plus unfiltered totals per type", () => {
   assert.equal(
     Db.countsSql(),
-    "SELECT (SELECT COUNT(*) FROM items WHERE type = 'note' AND status = 0) AS unreadNotes, (SELECT COUNT(*) FROM items WHERE type = 'todo' AND status = 0) AS inProgressTodos"
+    "SELECT (SELECT COUNT(*) FROM items WHERE type = 'note' AND status = 0) AS unreadNotes, "
+      + "(SELECT COUNT(*) FROM items WHERE type = 'todo' AND status = 0) AS inProgressTodos, "
+      + "(SELECT COUNT(*) FROM items WHERE type = 'note') AS notes, "
+      + "(SELECT COUNT(*) FROM items WHERE type = 'todo') AS todos"
+  )
+})
+
+test("convertTypeSql", () => {
+  const sql = withFixedNow(1700000000000, () => Db.convertTypeSql(3))
+  assert.equal(
+    sql,
+    "BEGIN; UPDATE items SET type = CASE type WHEN 'note' THEN 'todo' ELSE 'note' END, updated_at = 1700000000 WHERE id = 3; "
+      + "INSERT INTO history (type, title, action, ts) SELECT type, title, 'converted', 1700000000 FROM items WHERE id = 3; COMMIT;"
   )
 })
 
@@ -119,8 +134,8 @@ test("parseRows: garbage falls back to []", () => {
 
 test("parseCounts", () => {
   assert.deepEqual(
-    Db.parseCounts('[{"unreadNotes":2,"inProgressTodos":5}]'),
-    { unreadNotes: 2, inProgressTodos: 5 }
+    Db.parseCounts('[{"unreadNotes":2,"inProgressTodos":5,"notes":4,"todos":6}]'),
+    { unreadNotes: 2, inProgressTodos: 5, notes: 4, todos: 6 }
   )
 })
 
