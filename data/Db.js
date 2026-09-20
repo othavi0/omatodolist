@@ -48,19 +48,24 @@ function listSql(filterType, query) {
     else where.push("type = " + q(ft))
   }
   var needle = String(query || "").trim()
-  if (needle !== "")
-    where.push("title LIKE " + q("%" + likeEscape(needle) + "%") + " ESCAPE '\\'")
+  if (needle !== "") {
+    var pattern = q("%" + likeEscape(needle) + "%")
+    where.push("(title LIKE " + pattern + " ESCAPE '\\' OR body LIKE " + pattern + " ESCAPE '\\')")
+  }
   var sql = "SELECT id, type, title, body, status, created_at, updated_at FROM items"
   if (where.length > 0) sql += " WHERE " + where.join(" AND ")
   sql += " ORDER BY status ASC, updated_at DESC, id DESC"
   return sql
 }
 
-// Pending counts for the bar badge (spec §3.2): unread notes / in-progress todos.
+// Pending counts for the bar badge and the panel header: unread notes /
+// in-progress todos, plus unfiltered totals per type for the filter segment.
 function countsSql() {
   return "SELECT "
     + "(SELECT COUNT(*) FROM items WHERE type = 'note' AND status = 0) AS unreadNotes, "
-    + "(SELECT COUNT(*) FROM items WHERE type = 'todo' AND status = 0) AS inProgressTodos"
+    + "(SELECT COUNT(*) FROM items WHERE type = 'todo' AND status = 0) AS inProgressTodos, "
+    + "(SELECT COUNT(*) FROM items WHERE type = 'note') AS notes, "
+    + "(SELECT COUNT(*) FROM items WHERE type = 'todo') AS todos"
 }
 
 // Insert a new item (status 0) + "added" history row, and return its id.
@@ -117,6 +122,19 @@ function deleteItemSql(id) {
     + " INSERT INTO history (type, title, action, ts) "
     + "SELECT type, title, 'deleted', " + ts + " FROM items WHERE id = " + nid + ";"
     + " DELETE FROM items WHERE id = " + nid + ";"
+    + " COMMIT;"
+}
+
+// Flip an item's type (note<->todo), bump updated_at, keep status, and
+// record a "converted" history row — all in the same transaction.
+function convertTypeSql(id) {
+  var nid = Number(id)
+  var ts = now()
+  return "BEGIN;"
+    + " UPDATE items SET type = CASE type WHEN 'note' THEN 'todo' ELSE 'note' END, updated_at = " + ts
+    + " WHERE id = " + nid + ";"
+    + " INSERT INTO history (type, title, action, ts) "
+    + "SELECT type, title, 'converted', " + ts + " FROM items WHERE id = " + nid + ";"
     + " COMMIT;"
 }
 
@@ -200,13 +218,15 @@ function parseRows(text) {
   }
 }
 
-// Parse countsSql() output into { unreadNotes, inProgressTodos }.
+// Parse countsSql() output into { unreadNotes, inProgressTodos, notes, todos }.
 function parseCounts(text) {
   var rows = parseRows(text)
   var row = rows.length > 0 ? rows[0] : {}
   return {
     unreadNotes: Number(row.unreadNotes) || 0,
-    inProgressTodos: Number(row.inProgressTodos) || 0
+    inProgressTodos: Number(row.inProgressTodos) || 0,
+    notes: Number(row.notes) || 0,
+    todos: Number(row.todos) || 0
   }
 }
 

@@ -40,11 +40,14 @@ QtObject {
     property var history: []                   // historyList() results
     property int unreadNotes: 0                // notes with status 0
     property int inProgressTodos: 0            // todos with status 0
+    property int totalNotes: 0                 // all notes, unfiltered
+    property int totalTodos: 0                 // all todos, unfiltered
 
     // Last list() filter, remembered so load() can re-fetch the same subset
     // after a change (the panel sets these in Phase 2).
     property string listFilter: "all"
     property string listQuery: ""
+    property bool _listStale: false            // a list() arrived while one was running
 
     // ------------------------------------------------------------------ signals
     signal initialized()
@@ -53,7 +56,8 @@ QtObject {
     signal historyUpdated(var history)
     signal added(int id)
     signal statusChanged(int id, int status)
-    signal updated(int id)
+    signal updated(int id, string title)
+    signal typeChanged(int id)
     signal itemDeleted(int id)
     signal historyRowDeleted(int id)
     signal historyCleared()
@@ -82,6 +86,8 @@ QtObject {
             var c = Db.parseCounts(countsStdout.text)
             root.unreadNotes = c.unreadNotes
             root.inProgressTodos = c.inProgressTodos
+            root.totalNotes = c.notes
+            root.totalTodos = c.todos
             root.countsUpdated()
         }
     }
@@ -94,6 +100,10 @@ QtObject {
         onExited: function(exitCode) {
             if (exitCode !== 0) {
                 root.fail("list read failed (exit " + exitCode + ")")
+                return
+            }
+            if (root._listStale) {
+                Qt.callLater(function() { root.list(root.listFilter, root.listQuery) })
                 return
             }
             var rows = Db.parseRows(listStdout.text)
@@ -121,6 +131,7 @@ QtObject {
     // ------------------------------------------------------------------ writes
     property string _writeKind: ""
     property var _writeArgs: null
+    property var _writeQueue: []
 
     property Process writeProcess: Process {
         stdout: StdioCollector {
@@ -132,11 +143,13 @@ QtObject {
             var args = root._writeArgs
             root._writeKind = ""
             root._writeArgs = null
+            Qt.callLater(root._runNextWrite)
 
             if (exitCode !== 0) {
                 var err = String(writeStdout.text || "").trim()
                 if (err === "") err = "sqlite3 exited " + exitCode
                 root.fail(err)
+                if (kind !== "init") postWriteReload.restart()
                 return
             }
 
@@ -149,7 +162,8 @@ QtObject {
             } else {
                 if (kind === "add") root.added(Db.parseId(writeStdout.text))
                 else if (kind === "setStatus") root.statusChanged(args.id, args.status)
-                else if (kind === "update") root.updated(args.id)
+                else if (kind === "update") root.updated(args.id, args.title)
+                else if (kind === "convertType") root.typeChanged(args.id)
                 else if (kind === "deleteItem") root.itemDeleted(args.id)
                 else if (kind === "deleteHistory") root.historyRowDeleted(args.id)
                 else if (kind === "clearHistory") root.historyCleared()
@@ -161,15 +175,22 @@ QtObject {
         }
     }
 
-    function _write(kind, sql, args) {
-        if (root.writeProcess.running) {
-            root.fail("database busy — try again")
-            return
-        }
-        root._writeKind = kind
-        root._writeArgs = args
-        root.writeProcess.command = Db.sqliteCommand(root.dbPath, sql, false)
+    // One sqlite3 process at a time; later writes wait their turn instead of
+    // being dropped.
+    function _enqueue(kind, command, args) {
+        root._writeQueue.push({ kind: kind, command: command, args: args })
+        root._runNextWrite()
+    }
+    function _runNextWrite() {
+        if (root.writeProcess.running || root._writeQueue.length === 0) return
+        var next = root._writeQueue.shift()
+        root._writeKind = next.kind
+        root._writeArgs = next.args
+        root.writeProcess.command = next.command
         root.writeProcess.running = true
+    }
+    function _write(kind, sql, args) {
+        root._enqueue(kind, Db.sqliteCommand(root.dbPath, sql, false), args)
     }
 
     // ------------------------------------------------------------------ file watcher (spec §4)
@@ -203,12 +224,8 @@ QtObject {
 
     // Create the data dir + apply the schema (idempotent). Call once at start.
     function init() {
-        if (root.ready) return
-        if (root.writeProcess.running) return
-        root._writeKind = "init"
-        root._writeArgs = null
-        root.writeProcess.command = Db.initCommand(root.dataDir, root.dbPath)
-        root.writeProcess.running = true
+        if (root.ready || root._writeKind === "init") return
+        root._enqueue("init", Db.initCommand(root.dataDir, root.dbPath), null)
     }
 
     // Current pending counts (spec §3.2).
@@ -224,9 +241,11 @@ QtObject {
 
     // Unified list (spec §3.1). filterType: "all"|"note"|"todo"; query: title substring.
     function list(filterType, query) {
-        if (!root.ready || root.listProcess.running) return
         root.listFilter = String(filterType || "all")
         root.listQuery = String(query || "")
+        if (!root.ready) return
+        if (root.listProcess.running) { root._listStale = true; return }
+        root._listStale = false
         root.listProcess.command = Db.sqliteCommand(root.dbPath, Db.listSql(filterType, query), true)
         root.listProcess.running = true
     }
@@ -274,7 +293,13 @@ QtObject {
             root.fail("update: empty title")
             return
         }
-        root._write("update", Db.updateSql(id, t, body), { id: Number(id) })
+        root._write("update", Db.updateSql(id, t, body), { id: Number(id), title: t })
+    }
+
+    // Flip an item's type (note<->todo) + "converted" history. Emits typeChanged(id).
+    function convertType(id) {
+        if (!root.ready) return
+        root._write("convertType", Db.convertTypeSql(id), { id: Number(id) })
     }
 
     // Permanently delete an item + "deleted" history. Emits itemDeleted(id).

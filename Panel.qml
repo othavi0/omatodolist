@@ -9,10 +9,9 @@ import qs.Ui
 import "data" as Data
 import "ui" as Ui
 
-// Scratchpad popup: "Notes & Todos" (Phase 2) + "History" (Phase 3).
-// MainTab + HistoryTab + the Toast live here (not in the tabs) so every cross-
-// component reference resolves through this file's "ui" directory import —
-// Quickshell ignores single-file imports.
+// Scratchpad popup: "Items" (notes + todos) and "History" tabs. MainTab +
+// HistoryTab + the Toast live here (not in the tabs) so every cross-
+// component reference resolves through this file's "ui" directory import.
 Panel {
     id: root
     moduleName: "io.github.darksurferza.omatodolist"
@@ -43,6 +42,7 @@ Panel {
             mainTab.commitIfDirty()
             return
         }
+        root.activeTab = 0
         db.load()
         root.resetTabFocus()
         focusPrimeTimer.restart()
@@ -94,19 +94,15 @@ Panel {
             anchors.margins: Style.space(16)
             spacing: Style.space(12)
 
-            TabBar {
-                id: tabBar
+            Ui.PanelHeader {
                 Layout.fillWidth: true
-
-                TabButton {
-                    text: "Notes & Todos"
-                    onClicked: root.activeTab = 0
-                    focusPolicy: Qt.NoFocus
-                }
-                TabButton {
-                    text: "History"
-                    onClicked: root.activeTab = 1
-                    focusPolicy: Qt.NoFocus
+                db: db
+                activeTab: root.activeTab
+                foreground: root.contentForeground
+                onTabPicked: function(index) { root.activeTab = index }
+                onNewRequested: {
+                    root.activeTab = 0
+                    mainTab.startNew("note")
                 }
             }
 
