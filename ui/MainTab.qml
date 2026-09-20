@@ -49,9 +49,10 @@ Item {
     }
 
     // Focus hops title -> body through a tick with neither focused, so the
-    // save waits one turn and re-checks.
+    // save waits one turn and re-checks. Nothing is scheduled for a blur that
+    // leaves nothing to save, or it would land on a draft opened meanwhile.
     onEditorFocusedChanged: {
-        if (root.editorFocused) return
+        if (root.editorFocused || !(root.draftNew || editorPane.dirty)) return
         Qt.callLater(function() { if (!root.editorFocused) root.commitIfDirty() })
     }
 

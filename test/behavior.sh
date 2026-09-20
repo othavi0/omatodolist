@@ -72,6 +72,10 @@ ShellRoot {
     function() { mainTab.filterType = "all"; mainTab.searchText = "" },
     function() { console.log("SELECTION-AFTER-WIDENING " + (mainTab.selectedId === sr.keepId ? "kept" : "hijacked:" + mainTab.selectedId)) },
 
+    function() { mainTab.pickItem(4); mainTab.focusEditor() },
+    function() { mainTab.editorBody = "THROWN-AWAY"; mainTab.discardEditor(); mainTab.startNew("note") },
+    function() { console.log("DRAFT-AFTER-DISCARD " + mainTab.draftNew); mainTab.discardEditor() },
+
     function() { mainTab.cycleFilter() },
     function() { console.log("FILTER-AFTER-F " + mainTab.filterType + " rows=" + db.items.filter(function(i) { return i.type !== "note" }).length) }
   ]
@@ -153,6 +157,7 @@ expect "that draft is saved" "SELECT COUNT(*) FROM items WHERE title = 'DRAFT-IN
 expect "three writes fired in one tick all land (edit, convert, toggle)" \
   "SELECT (SELECT body FROM items WHERE id = 1) || '|' || (SELECT type || ':' || status FROM items WHERE id = 2)" "QUEUED-BODY|note:1"
 logged "an item added outside the filter does not hijack the selection later" "SELECTION-AFTER-WIDENING kept$"
+logged "a draft opened in the same tick as a discard stays open" "DRAFT-AFTER-DISCARD true$"
 logged "f cycles the type filter and the list follows" "FILTER-AFTER-F note rows=0$"
 logged "no write was rejected during the whole run" "WRITE-FAILURES 0$"
 
