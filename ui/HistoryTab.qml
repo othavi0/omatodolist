@@ -4,6 +4,7 @@ import QtQuick
 import QtQuick.Layouts
 import qs.Commons
 import "Icons.js" as Icons
+import "Item.js" as ItemJs
 
 // "History" tab: a read-only mutation log rendered as a table of
 // `type | title | action | timestamp` rows (newest-first, from db.history).
@@ -25,7 +26,7 @@ Item {
     readonly property bool clearButtonEnabled: root.db ? root.db.history.length > 0 : false
 
     readonly property var rowList: root.db ? (root.db.history || []) : []
-    readonly property int selectedIndex: root.indexOfId(root.rowList, root.selectedId)
+    readonly property int selectedIndex: ItemJs.indexOfId(root.rowList, root.selectedId)
     readonly property var selectedRow: root.selectedIndex >= 0 ? root.rowList[root.selectedIndex] : null
 
     // Column widths shared by the header and every delegate so cells stay in
@@ -34,12 +35,6 @@ Item {
     readonly property int colActionW: Style.space(76)
     readonly property int colTsW: Style.space(128)
 
-    function indexOfId(rows, id) {
-        var list = rows || []
-        for (var i = 0; i < list.length; ++i)
-            if (Number(list[i].id) === Number(id)) return i
-        return -1
-    }
 
     // Unix seconds -> "YYYY-MM-DD HH:MM".
     function formatTs(ts) {
@@ -122,7 +117,7 @@ Item {
             root.cancelDelete()
             return
         }
-        if (root.indexOfId(rows, root.selectedId) < 0) {
+        if (ItemJs.indexOfId(rows, root.selectedId) < 0) {
             root.selectedId = rows[0].id
             if (root.selectedIndex >= 0) listView.positionViewAtIndex(root.selectedIndex, ListView.Center)
         }
@@ -294,7 +289,7 @@ Item {
         target: root.db
         function onHistoryChanged() { root.onHistoryChanged() }
         function onHistoryRowDeleted(id) {
-            var idx = root.indexOfId(root.rowList, Number(id))
+            var idx = ItemJs.indexOfId(root.rowList, Number(id))
             var title = idx >= 0 ? root.rowList[idx].title : "entry"
             if (root.toast) root.toast.show("Deleted — " + title)
         }

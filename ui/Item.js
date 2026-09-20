@@ -50,3 +50,10 @@ function relativeAge(tsSeconds, nowSeconds) {
   function pad(n) { return (n < 10 ? "0" : "") + n }
   return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
 }
+
+function indexOfId(rows, id) {
+  var list = rows || []
+  for (var i = 0; i < list.length; ++i)
+    if (Number(list[i].id) === Number(id)) return i
+  return -1
+}
