@@ -39,7 +39,7 @@ Item {
     property alias editorBody: editorPane.bodyText
 
     property int _selectAfterReload: -1
-    property string _savingTitle: ""
+    property int _quietSaveId: -1
 
     readonly property bool editorFocused: editorPane.titleFocused || editorPane.bodyFocused
     readonly property string focusContext: {
@@ -121,6 +121,7 @@ Item {
     }
 
     function pickItem(id) {
+        root._selectAfterReload = -1
         root.selectedId = id
         root.focusList()
         listView.positionViewAtIndex(root.selectedIndex, ListView.Center)
@@ -166,9 +167,10 @@ Item {
     function saveEdit() {
         var e = editorPane.takeEdit()
         if (!e) return
-        root._savingTitle = e.title
         root.db.update(e.id, e.title, e.body)
-        if (e.titleWasEmpty && root.toast) root.toast.show("Title can't be empty — kept “" + e.title + "”")
+        if (!e.titleWasEmpty) return
+        root._quietSaveId = e.id
+        if (root.toast) root.toast.show("Title can't be empty — kept “" + e.title + "”")
     }
 
     // Every way out of the editor lands here. Keys and the Save button hand
@@ -245,6 +247,7 @@ Item {
         id: filterDebounce
         interval: 120
         onTriggered: {
+            root._selectAfterReload = -1
             if (root.db) root.db.list(root.filterType, root.searchText)
         }
     }
@@ -434,9 +437,9 @@ Item {
         target: root.db
         function onItemsUpdated() { root.onItemsSynced() }
         function onAdded(id) { root._selectAfterReload = Number(id) }
-        function onUpdated(id) {
-            if (root.toast && root._savingTitle !== "") root.toast.show("Saved — " + root._savingTitle)
-            root._savingTitle = ""
+        function onUpdated(id, title) {
+            if (id === root._quietSaveId) { root._quietSaveId = -1; return }
+            if (root.toast) root.toast.show("Saved — " + title)
         }
         function onStatusChanged(id, status) {
             if (Number(id) !== root.selectedId || !root.toast) return

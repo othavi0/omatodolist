@@ -18,6 +18,7 @@ ShellRoot {
   property bool started: false
   property int writeFailures: 0
   property int lastId: -1
+  property int keepId: -1
   property int beforeLastId: -1
   function titleOf(id) {
     for (var i = 0; i < db.items.length; ++i) if (Number(db.items[i].id) === id) return db.items[i].title
@@ -61,6 +62,15 @@ ShellRoot {
     function() { console.log("DRAFT-AFTER-RELOAD " + mainTab.draftNew + " " + mainTab.editorTitle) },
     function() { mainTab.commitEditor(true) },
     function() { mainTab.searchText = "" },
+
+    function() { mainTab.pickItem(1); mainTab.focusEditor() },
+    function() { mainTab.editorBody = "QUEUED-BODY"; mainTab.pickItem(2); mainTab.convertSelected(); mainTab.toggleStatus() },
+
+    function() { mainTab.filterType = "todo"; mainTab.searchText = "upstream" },
+    function() { sr.keepId = mainTab.selectedId; mainTab.startNew("note") },
+    function() { mainTab.editorTitle = "NOTE-HIDDEN-BY-FILTER"; mainTab.commitEditor(true) },
+    function() { mainTab.filterType = "all"; mainTab.searchText = "" },
+    function() { console.log("SELECTION-AFTER-WIDENING " + (mainTab.selectedId === sr.keepId ? "kept" : "hijacked:" + mainTab.selectedId)) },
 
     function() { mainTab.cycleFilter() },
     function() { console.log("FILTER-AFTER-F " + mainTab.filterType + " rows=" + db.items.filter(function(i) { return i.type !== "note" }).length) }
@@ -140,6 +150,9 @@ expect "an emptied title keeps the saved title and still saves the body" \
 logged "deleting the last row selects the row above it" "AFTER-DELETE-LAST previous-row$"
 logged "a draft survives a reload of an empty filtered list" "DRAFT-AFTER-RELOAD true DRAFT-IN-EMPTY-LIST$"
 expect "that draft is saved" "SELECT COUNT(*) FROM items WHERE title = 'DRAFT-IN-EMPTY-LIST'" "1"
+expect "three writes fired in one tick all land (edit, convert, toggle)" \
+  "SELECT (SELECT body FROM items WHERE id = 1) || '|' || (SELECT type || ':' || status FROM items WHERE id = 2)" "QUEUED-BODY|note:1"
+logged "an item added outside the filter does not hijack the selection later" "SELECTION-AFTER-WIDENING kept$"
 logged "f cycles the type filter and the list follows" "FILTER-AFTER-F note rows=0$"
 logged "no write was rejected during the whole run" "WRITE-FAILURES 0$"
 

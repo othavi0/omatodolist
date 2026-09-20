@@ -56,7 +56,7 @@ QtObject {
     signal historyUpdated(var history)
     signal added(int id)
     signal statusChanged(int id, int status)
-    signal updated(int id)
+    signal updated(int id, string title)
     signal typeChanged(int id)
     signal itemDeleted(int id)
     signal historyRowDeleted(int id)
@@ -102,7 +102,10 @@ QtObject {
                 root.fail("list read failed (exit " + exitCode + ")")
                 return
             }
-            if (root._listStale) { root.list(root.listFilter, root.listQuery); return }
+            if (root._listStale) {
+                Qt.callLater(function() { root.list(root.listFilter, root.listQuery) })
+                return
+            }
             var rows = Db.parseRows(listStdout.text)
             root.items = rows
             root.itemsUpdated(rows)
@@ -146,6 +149,7 @@ QtObject {
                 var err = String(writeStdout.text || "").trim()
                 if (err === "") err = "sqlite3 exited " + exitCode
                 root.fail(err)
+                if (kind !== "init") postWriteReload.restart()
                 return
             }
 
@@ -158,7 +162,7 @@ QtObject {
             } else {
                 if (kind === "add") root.added(Db.parseId(writeStdout.text))
                 else if (kind === "setStatus") root.statusChanged(args.id, args.status)
-                else if (kind === "update") root.updated(args.id)
+                else if (kind === "update") root.updated(args.id, args.title)
                 else if (kind === "convertType") root.typeChanged(args.id)
                 else if (kind === "deleteItem") root.itemDeleted(args.id)
                 else if (kind === "deleteHistory") root.historyRowDeleted(args.id)
@@ -289,7 +293,7 @@ QtObject {
             root.fail("update: empty title")
             return
         }
-        root._write("update", Db.updateSql(id, t, body), { id: Number(id) })
+        root._write("update", Db.updateSql(id, t, body), { id: Number(id), title: t })
     }
 
     // Flip an item's type (note<->todo) + "converted" history. Emits typeChanged(id).
