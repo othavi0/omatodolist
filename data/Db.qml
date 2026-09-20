@@ -3,27 +3,15 @@ import Quickshell
 import Quickshell.Io
 import "Db.js" as Db
 
-// Scratchpad data layer — the single entry point for all database access.
-//
-// Views (BarWidget.qml, Panel.qml) never build SQL or touch sqlite3 directly:
-// they instantiate this component and call its methods. All SQL lives in
-// Db.js (pure, Node-testable); this component owns the sqlite3 `Process`es,
-// the `FileView` change watcher (spec §4), and the cached state that the UI
-// binds to.
-//
-// Lifecycle:
-//   Component.onCompleted -> init()            (mkdir + apply schema, idempotent)
-//   init done             -> load()            (counts + list + history)
-//   file changed (any)    -> debounced load()  (our writes AND external edits)
-//
-// Writes are serialized (one at a time); reads use one dedicated Process each
-// so counts/list/history refresh independently. Every mutation appends its
-// history row inside the same BEGIN…COMMIT (see Db.js).
+// Scratchpad data layer: the single entry point for all database access.
+// Views call this component's methods instead of building SQL or touching
+// sqlite3 directly. Writes are serialized through one Process (one at a
+// time); each read (counts/list/history) uses its own dedicated Process so
+// they refresh independently.
 QtObject {
     id: root
 
-    // ------------------------------------------------------------------ paths
-    // $XDG_DATA_HOME/omarchy, falling back to ~/.local/share/omarchy (spec §5).
+    // $XDG_DATA_HOME/omarchy, falling back to ~/.local/share/omarchy.
     readonly property string dataDir: {
         var xdg = Quickshell.env("XDG_DATA_HOME")
         if (xdg && String(xdg) !== "") return String(xdg) + "/omarchy"
@@ -31,7 +19,6 @@ QtObject {
     }
     readonly property string dbPath: root.dataDir + "/scratchpad.db"
 
-    // ------------------------------------------------------------------ state
     property bool ready: false                 // init() completed
     property string lastError: ""
 
@@ -44,7 +31,7 @@ QtObject {
     property int totalTodos: 0                 // all todos, unfiltered
 
     // Last list() filter, remembered so load() can re-fetch the same subset
-    // after a change (the panel sets these in Phase 2).
+    // after a change.
     property string listFilter: "all"
     property string listQuery: ""
     property bool _listStale: false            // a list() arrived while one was running
@@ -61,7 +48,6 @@ QtObject {
     signal historyCleared()
     signal failed(string message)
 
-    // ------------------------------------------------------------------ errors
     // Central failure path: surfaces in the journal (console.error) so data-layer
     // errors are visible in the shell logs even before the UI handles them.
     function fail(message) {
@@ -70,7 +56,6 @@ QtObject {
         root.failed(message)
     }
 
-    // ------------------------------------------------------------------ reads
     property Process countsProcess: Process {
         stdout: StdioCollector {
             id: countsStdout
@@ -126,7 +111,6 @@ QtObject {
         }
     }
 
-    // ------------------------------------------------------------------ writes
     property string _writeKind: ""
     property var _writeArgs: null
     property var _writeQueue: []
@@ -164,9 +148,8 @@ QtObject {
                 else if (kind === "deleteItem") root.itemDeleted(args.id)
                 else if (kind === "deleteHistory") root.historyRowDeleted(args.id)
                 else if (kind === "clearHistory") root.historyCleared()
-                // Belt and braces next to the file watcher: our own write just
-                // changed the file, so refresh shortly (also covers the edge
-                // case where the watcher misses our own modification).
+                // Belt-and-braces alongside the watcher: refresh shortly in
+                // case it misses our own write to the file.
                 postWriteReload.restart()
             }
         }
@@ -190,11 +173,10 @@ QtObject {
         root._enqueue(kind, Db.sqliteCommand(root.dbPath, sql, false), args)
     }
 
-    // ------------------------------------------------------------------ file watcher (spec §4)
-    // Watches the db file; any change — external sqlite3 edits, other tools,
-    // or our own writes — triggers a debounced reload. No timer polling.
-    // QtObject has no default property, so these are explicit properties
-    // (same pattern as the Process objects above) rather than inline children.
+    // Watches the db file; any change (external edits or our own writes)
+    // triggers a debounced reload. QtObject has no default property, so this
+    // is an explicit property (like the Process objects above) rather than an
+    // inline child.
     property FileView dbFile: FileView {
         path: root.dbPath
         watchChanges: true
@@ -217,8 +199,6 @@ QtObject {
         onTriggered: root.load()
     }
 
-    // ------------------------------------------------------------------ public API
-
     // Create the data dir + apply the schema (idempotent). Call once at start.
     function init() {
         if (root.ready || root._writeKind === "init") return
@@ -231,7 +211,7 @@ QtObject {
         root.countsProcess.running = true
     }
 
-    // Unified list (spec §3.1). filterType: "all"|"note"|"todo"; query: title substring.
+    // Unified list. filterType: "all"|"note"|"todo"; query: title substring.
     function list(filterType, query) {
         root.listFilter = String(filterType || "all")
         root.listQuery = String(query || "")
@@ -249,16 +229,13 @@ QtObject {
     }
 
     // Re-fetch everything with the last list() filter (used by the watcher,
-    // after writes, and as the reopen safety net — spec §4).
+    // after writes, and as the reopen safety net).
     function load() {
         root.loadCounts()
         root.list(root.listFilter, root.listQuery)
         root.historyList()
     }
 
-    // ------------------------------------------------------------------ mutations
-
-    // Add a note/todo (status 0) + "added" history. Emits added(id).
     function add(type, title, body) {
         if (!root.ready) return
         var t = String(title || "").trim()
@@ -269,15 +246,13 @@ QtObject {
         root._write("add", Db.addSql(type === "todo" ? "todo" : "note", t, body), null)
     }
 
-    // Set status (0 or 1) + "completed"/"reopened" history. Emits statusChanged(id, status).
     function setStatus(id, status) {
         if (!root.ready) return
         var s = status === 1 ? 1 : 0
         root._write("setStatus", Db.setStatusSql(id, s), { id: Number(id), status: s })
     }
 
-    // Update an item's title/body (type is fixed on edit) + "edited" history.
-    // Emits updated(id). Empty title is rejected (the field is required).
+    // Type is fixed on edit — use convertType() to change it.
     function update(id, title, body) {
         if (!root.ready) return
         var t = String(title || "").trim()
@@ -288,25 +263,24 @@ QtObject {
         root._write("update", Db.updateSql(id, t, body), { id: Number(id), title: t })
     }
 
-    // Flip an item's type (note<->todo) + "converted" history. Emits typeChanged(id).
+    // Emits typeChanged(id).
     function convertType(id) {
         if (!root.ready) return
         root._write("convertType", Db.convertTypeSql(id), { id: Number(id) })
     }
 
-    // Permanently delete an item + "deleted" history. Emits itemDeleted(id).
+    // Emits itemDeleted(id).
     function deleteItem(id) {
         if (!root.ready) return
         root._write("deleteItem", Db.deleteItemSql(id), { id: Number(id) })
     }
 
-    // Delete one history row. Emits historyRowDeleted(id).
+    // Emits historyRowDeleted(id).
     function deleteHistory(id) {
         if (!root.ready) return
         root._write("deleteHistory", Db.deleteHistorySql(id), { id: Number(id) })
     }
 
-    // Clear the whole history table (items are untouched). Emits historyCleared().
     function clearHistory() {
         if (!root.ready) return
         root._write("clearHistory", Db.clearHistorySql(), null)

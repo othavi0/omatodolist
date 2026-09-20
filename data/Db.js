@@ -1,20 +1,9 @@
 .pragma library
 
-// Scratchpad SQL builders + result parsers.
-//
-// This module is deliberately Quickshell-free (no `Quickshell.*`, no QML types)
-// so it can be exercised directly under Node (see test/phase1-db.mjs). It owns
-// ALL SQL for the plugin: views and Db.qml never build SQL ad hoc — they call
-// these builders and the `*Command()` helpers, which return ready-to-run argv
-// arrays for the sqlite3 CLI.
-//
-// Conventions:
-//   - `q()` quotes a string as a SQL literal (single quotes doubled).
-//   - Timestamps are unix seconds (spec §2).
-//   - Every mutation appends a history row inside the same BEGIN…COMMIT.
-//   - Reads that return rows use `sqlite3 -json` and are parsed by parseRows().
-
-// --------------------------------------------------------------------------- escaping
+// Scratchpad SQL builders + result parsers. Deliberately Quickshell-free (no
+// `Quickshell.*`, no QML types) so it's exercised directly under Node (see
+// test/db.test.mjs). Owns all SQL for the plugin — views and Db.qml call
+// these builders instead of building SQL ad hoc.
 
 // Quote a JS string as a single-quoted SQL literal, doubling embedded quotes.
 function q(value) {
@@ -27,16 +16,12 @@ function likeEscape(s) {
   return String(s).replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_")
 }
 
-// --------------------------------------------------------------------------- time
-
-// Unix timestamp in seconds (spec §2).
+// Unix timestamp in seconds.
 function now() {
   return Math.floor(Date.now() / 1000)
 }
 
-// --------------------------------------------------------------------------- SQL builders
-
-// Unified list (spec §3.1/§3.2). filterType is "all"|"note"|"todo";
+// Unified list. filterType is "all"|"note"|"todo";
 // query is an optional case-insensitive substring match on title.
 // Sort order: pending (unread/in-progress, status 0) always on top, then
 // recency — `status ASC, updated_at DESC`.
@@ -152,8 +137,6 @@ function clearHistorySql() {
   return "DELETE FROM history"
 }
 
-// --------------------------------------------------------------------------- schema
-
 // Full schema, applied idempotently on first run (every statement uses
 // IF NOT EXISTS). Mirrors data/schema.sql, which stays as the human-readable
 // reference — this constant is the runtime source of truth: it lives entirely
@@ -179,8 +162,6 @@ var SCHEMA = "CREATE TABLE IF NOT EXISTS items ("
   + ");"
   + "CREATE INDEX IF NOT EXISTS idx_history_ts ON history(ts DESC);"
 
-// --------------------------------------------------------------------------- command builders
-
 // argv for a read or write via the sqlite3 CLI. `json` enables -json output.
 //
 // `.timeout 5000` is a CLI dot-command (not SQL) that sets the busy timeout for
@@ -200,8 +181,6 @@ function initCommand(dataDir, dbPath) {
   return ["bash", "-c", 'mkdir -p -- "$0" && sqlite3 "$1" "$2"',
     String(dataDir), String(dbPath), SCHEMA]
 }
-
-// --------------------------------------------------------------------------- result parsers
 
 // Parse a `sqlite3 -json` result into an array of row objects (or []).
 // An empty result set prints nothing, so "" → [].
