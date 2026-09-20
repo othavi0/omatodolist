@@ -1,8 +1,7 @@
 .pragma library
 
-// Material Design Icons glyphs (via the Nerd Font patch), by code point —
-// never written literally: the write tool strips private-use-area glyphs
-// from file contents, so every glyph is built at load time instead.
+// Material Design Icons from the Nerd Font patch, built from code points so
+// the file stays plain ASCII.
 function g(codePoint) { return String.fromCodePoint(codePoint) }
 
 var plus = g(0xF0415)
