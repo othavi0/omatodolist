@@ -40,7 +40,9 @@ ShellRoot {
   property bool failed: false
   property string currentScene: ""
   property int sceneIndex: 0
-  readonly property var scenes: ["browse", "draft", "empty", "history"]
+  readonly property var scenes: Quickshell.env("SCENES").split(",")
+  // A scene that finds fewer controls than this measured nothing.
+  readonly property var minControls: ({ browse: 9, draft: 8, empty: 5, history: 3, blank: 6 })
   readonly property string outDir: Quickshell.env("OUT_DIR")
 
   Data.Db {
@@ -87,6 +89,10 @@ ShellRoot {
       var ok = row.height === want
       if (!ok) sr.failed = true
       parts.push(row.name + "=" + row.height + (ok ? "" : " MISMATCH(want " + want + ")"))
+    }
+    if (found.length < sr.minControls[sceneName]) {
+      sr.failed = true
+      parts.push("TOO-FEW-CONTROLS(" + found.length + " < " + sr.minControls[sceneName] + ")")
     }
     console.log("SCENE " + sceneName + " HEIGHTS " + parts.join(" "))
   }
@@ -171,4 +177,6 @@ QML
 
 echo "config dir: $cfg_dir"
 echo "output dir: $out_dir"
-OUT_DIR="$out_dir" run_qs
+SCENES=browse,draft,empty,history OUT_DIR="$out_dir" run_qs
+sqlite3 "$db" "DELETE FROM items; DELETE FROM history;"
+SCENES=blank OUT_DIR="$out_dir" run_qs

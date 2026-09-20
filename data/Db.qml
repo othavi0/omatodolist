@@ -47,6 +47,7 @@ QtObject {
     // after a change (the panel sets these in Phase 2).
     property string listFilter: "all"
     property string listQuery: ""
+    property bool _listStale: false            // a list() arrived while one was running
 
     // ------------------------------------------------------------------ signals
     signal initialized()
@@ -101,6 +102,7 @@ QtObject {
                 root.fail("list read failed (exit " + exitCode + ")")
                 return
             }
+            if (root._listStale) { root.list(root.listFilter, root.listQuery); return }
             var rows = Db.parseRows(listStdout.text)
             root.items = rows
             root.itemsUpdated(rows)
@@ -126,6 +128,7 @@ QtObject {
     // ------------------------------------------------------------------ writes
     property string _writeKind: ""
     property var _writeArgs: null
+    property var _writeQueue: []
 
     property Process writeProcess: Process {
         stdout: StdioCollector {
@@ -137,6 +140,7 @@ QtObject {
             var args = root._writeArgs
             root._writeKind = ""
             root._writeArgs = null
+            Qt.callLater(root._runNextWrite)
 
             if (exitCode !== 0) {
                 var err = String(writeStdout.text || "").trim()
@@ -167,15 +171,22 @@ QtObject {
         }
     }
 
-    function _write(kind, sql, args) {
-        if (root.writeProcess.running) {
-            root.fail("database busy — try again")
-            return
-        }
-        root._writeKind = kind
-        root._writeArgs = args
-        root.writeProcess.command = Db.sqliteCommand(root.dbPath, sql, false)
+    // One sqlite3 process at a time; later writes wait their turn instead of
+    // being dropped.
+    function _enqueue(kind, command, args) {
+        root._writeQueue.push({ kind: kind, command: command, args: args })
+        root._runNextWrite()
+    }
+    function _runNextWrite() {
+        if (root.writeProcess.running || root._writeQueue.length === 0) return
+        var next = root._writeQueue.shift()
+        root._writeKind = next.kind
+        root._writeArgs = next.args
+        root.writeProcess.command = next.command
         root.writeProcess.running = true
+    }
+    function _write(kind, sql, args) {
+        root._enqueue(kind, Db.sqliteCommand(root.dbPath, sql, false), args)
     }
 
     // ------------------------------------------------------------------ file watcher (spec §4)
@@ -209,12 +220,8 @@ QtObject {
 
     // Create the data dir + apply the schema (idempotent). Call once at start.
     function init() {
-        if (root.ready) return
-        if (root.writeProcess.running) return
-        root._writeKind = "init"
-        root._writeArgs = null
-        root.writeProcess.command = Db.initCommand(root.dataDir, root.dbPath)
-        root.writeProcess.running = true
+        if (root.ready || root._writeKind === "init") return
+        root._enqueue("init", Db.initCommand(root.dataDir, root.dbPath), null)
     }
 
     // Current pending counts (spec §3.2).
@@ -230,9 +237,11 @@ QtObject {
 
     // Unified list (spec §3.1). filterType: "all"|"note"|"todo"; query: title substring.
     function list(filterType, query) {
-        if (!root.ready || root.listProcess.running) return
         root.listFilter = String(filterType || "all")
         root.listQuery = String(query || "")
+        if (!root.ready) return
+        if (root.listProcess.running) { root._listStale = true; return }
+        root._listStale = false
         root.listProcess.command = Db.sqliteCommand(root.dbPath, Db.listSql(filterType, query), true)
         root.listProcess.running = true
     }

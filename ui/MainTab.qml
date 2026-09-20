@@ -10,7 +10,8 @@ import "Item.js" as ItemJs
 // Keyboard map:
 //   list:   j/k or ↑/↓ move · Enter/l/→/Tab edit the selected item
 //           · n new draft · space/c toggle status · d delete (double-press
-//           to confirm) · / focus search · Esc closes the panel
+//           to confirm) · / focus search · f cycles All/Notes/Todos
+//           · Esc closes the panel
 //   editor: fields own printable keys · Tab title→body, body→save+list
 //           · Enter in body saves · Esc saves (auto-save on leaving)
 //           · `t` on an empty draft title toggles note/todo
@@ -32,17 +33,13 @@ Item {
     property int deleteArmId: -1            // -1 = not armed
     property int nowSeconds: Math.floor(Date.now() / 1000)
 
-    readonly property bool deleteArmed: root.deleteArmId >= 0
+    readonly property bool deleteArmed: root.deleteArmId >= 0 && root.deleteArmId === root.selectedId
     property alias searchText: searchField.text
     property alias editorTitle: editorPane.titleText
     property alias editorBody: editorPane.bodyText
 
-    // The item the editor fields belong to, and the values they opened with.
-    // Saves go to editingId, never to the selection: the selection can move
-    // (click, filter, external delete) while the fields still hold an edit.
-    property int editingId: -1
-    property string _editBaseTitle: ""
-    property string _editBaseBody: ""
+    property int _selectAfterReload: -1
+    property string _savingTitle: ""
 
     readonly property bool editorFocused: editorPane.titleFocused || editorPane.bodyFocused
     readonly property string focusContext: {
@@ -60,7 +57,7 @@ Item {
 
     readonly property var hintSets: ({
         list: [["j/k", "move"], ["Enter", "edit"], ["n", "new"], ["Space", "toggle"],
-            ["d d", "delete"], ["/", "search"], ["Esc", "close"]],
+            ["d d", "delete"], ["/", "search"], ["f", "filter"], ["Esc", "close"]],
         search: [["Enter", "to list"], ["Esc", "clear"]],
         editor: [["Tab", "next field"], ["Enter", "save"], ["Shift+Enter", "new line"], ["Esc", "save and back"]],
         draft: [["Tab", "next field"], ["Enter", "save"], ["Shift+Enter", "new line"], ["Esc", "save and back"], ["t", "note/todo"]],
@@ -84,8 +81,6 @@ Item {
     readonly property int selectedIndex: root.indexOfId(root.itemList, root.selectedId)
     readonly property var selectedItem: root.selectedIndex >= 0 ? root.itemList[root.selectedIndex] : null
     readonly property bool _filtered: root.filterType !== "all" || root.searchText.trim() !== ""
-    readonly property bool editorDirty: !root.draftNew && root.editingId >= 0
-        && (editorPane.titleText !== root._editBaseTitle || editorPane.bodyText !== root._editBaseBody)
 
     function toggleStatus() {
         if (!root.db || !root.selectedItem) return
@@ -144,12 +139,7 @@ Item {
     // binding, which lags by one step inside onSelectedIdChanged.
     function refillEditor() {
         var idx = root.indexOfId(root.itemList, root.selectedId)
-        var it = idx >= 0 ? root.itemList[idx] : null
-        root.editingId = it ? Number(it.id) : -1
-        editorPane.titleText = it ? String(it.title || "") : ""
-        editorPane.bodyText = it ? String(it.body || "") : ""
-        root._editBaseTitle = editorPane.titleText
-        root._editBaseBody = editorPane.bodyText
+        editorPane.openItem(idx >= 0 ? root.itemList[idx] : null)
     }
 
     function focusEditor() {
@@ -169,46 +159,37 @@ Item {
         deleteArmTimer.stop()
         root.draftNew = true
         root.draftType = type === "todo" ? "todo" : "note"
-        editorPane.titleText = ""
-        editorPane.bodyText = ""
+        editorPane.openDraft()
         Qt.callLater(function() { editorPane.focusTitle() })
     }
 
-    // Writes a dirty edit to the item it was typed in. Returns false only
-    // when the edit cannot be saved (empty title).
     function saveEdit() {
-        if (!root.editorDirty) return true
-        var title = String(editorPane.titleText || "").trim()
-        var body = String(editorPane.bodyText || "")
-        if (title === "") {
-            if (root.toast) root.toast.show("Title can't be empty")
-            return false
-        }
-        root.db.update(root.editingId, title, body)
-        if (root.toast) root.toast.show("Saved — " + title)
-        editorPane.titleText = title
-        root._editBaseTitle = title
-        root._editBaseBody = body
-        return true
+        var e = editorPane.takeEdit()
+        if (!e) return
+        root._savingTitle = e.title
+        root.db.update(e.id, e.title, e.body)
+        if (e.titleWasEmpty && root.toast) root.toast.show("Title can't be empty — kept “" + e.title + "”")
     }
 
-    // Every way out of the editor lands here: Esc, Tab or Enter from the
-    // body, the Save button, focus leaving the pane, the panel closing.
-    function commitEditor() {
+    // Every way out of the editor lands here. Keys and the Save button hand
+    // focus back to the list; a save caused by focus already having moved
+    // (a click into the search field, the panel closing) leaves focus alone.
+    function commitEditor(returnFocus) {
         if (root.draftNew) {
             var title = String(editorPane.titleText || "").trim()
+            var body = String(editorPane.bodyText || "")
             root.draftNew = false
+            root.refillEditor()
             if (title === "") {
                 if (root.toast) root.toast.show("New item needs a title")
-                root.refillEditor()
             } else {
-                root.db.add(root.draftType, title, String(editorPane.bodyText || ""))
+                root.db.add(root.draftType, title, body)
                 if (root.toast) root.toast.show("Added " + root.draftType + " — " + title)
             }
-            root.focusList()
-            return
+        } else {
+            root.saveEdit()
         }
-        if (root.saveEdit()) root.focusList()
+        if (returnFocus) root.focusList()
     }
 
     function discardEditor() {
@@ -218,7 +199,13 @@ Item {
     }
 
     function commitIfDirty() {
-        if (root.draftNew || root.editorDirty) root.commitEditor()
+        if (root.draftNew || editorPane.dirty) root.commitEditor(false)
+    }
+
+    function cycleFilter() {
+        var order = ["all", "note", "todo"]
+        root.filterType = order[(order.indexOf(root.filterType) + 1) % order.length]
+        filterDebounce.restart()
     }
 
     function onListKey(event) {
@@ -239,6 +226,8 @@ Item {
             root.startNew("note"); event.accepted = true
         } else if (event.text === "/") {
             root.focusSearch(); event.accepted = true
+        } else if (event.text === "f") {
+            root.cycleFilter(); event.accepted = true
         } else if (event.key === Qt.Key_Escape) {
             if (root.deleteArmed) { root.deleteArmId = -1; deleteArmTimer.stop(); event.accepted = true }
             else { root.closeRequested(); event.accepted = true }
@@ -374,18 +363,17 @@ Item {
                 item: root.selectedItem
                 draft: root.draftNew
                 draftType: root.draftType
-                dirty: root.editorDirty
                 deleteArmed: root.deleteArmed
                 nowSeconds: root.nowSeconds
                 foreground: root.foreground
                 accent: root.accent
-                onLeaveRequested: root.commitEditor()
+                onLeaveRequested: root.commitEditor(true)
                 onToggleDraftTypeRequested: function(v) { root.draftType = v }
                 onToggleRequested: root.toggleStatus()
                 onConvertRequested: root.convertSelected()
                 onCopyRequested: root.copySelected()
                 onDeleteClicked: root.armDelete()
-                onSaveRequested: root.commitEditor()
+                onSaveRequested: root.commitEditor(true)
                 onDiscardRequested: root.discardEditor()
             }
 
@@ -425,30 +413,30 @@ Item {
     }
 
     function onItemsSynced() {
+        if (root.draftNew) return
         var items = root.itemList
-        var refill = !root.draftNew && !root.editorFocused && !root.editorDirty
+        if (root._selectAfterReload >= 0 && root.indexOfId(items, root._selectAfterReload) >= 0) {
+            root.selectedId = root._selectAfterReload
+            root._selectAfterReload = -1
+            listView.positionViewAtIndex(root.selectedIndex, ListView.Center)
+        }
+        var refill = !root.editorFocused && !editorPane.dirty
         if (root.indexOfId(items, root.selectedId) >= 0) {
             if (refill) root.refillEditor()
             return
         }
-        if (items.length === 0) {
-            root.selectedId = -1
-            root.draftNew = false
-            root.refillEditor()
-            return
-        }
-        root.selectedId = items[0].id
+        root.selectedId = items.length > 0 ? items[0].id : -1
         if (refill) root.refillEditor()
-        listView.positionViewAtIndex(0, ListView.Center)
+        if (items.length > 0) listView.positionViewAtIndex(0, ListView.Center)
     }
 
     Connections {
         target: root.db
         function onItemsUpdated() { root.onItemsSynced() }
-        function onAdded(id) {
-            root.selectedId = Number(id)
-            Qt.callLater(function() { root.focusList() })
-            listView.positionViewAtIndex(root.selectedIndex, ListView.Center)
+        function onAdded(id) { root._selectAfterReload = Number(id) }
+        function onUpdated(id) {
+            if (root.toast && root._savingTitle !== "") root.toast.show("Saved — " + root._savingTitle)
+            root._savingTitle = ""
         }
         function onStatusChanged(id, status) {
             if (Number(id) !== root.selectedId || !root.toast) return
@@ -470,9 +458,8 @@ Item {
             if (root.toast) root.toast.show("Deleted")
             var items = root.itemList
             var idx = root.indexOfId(items, Number(id))
-            root.selectedId = (idx >= 0 && idx + 1 < items.length)
-                ? items[idx + 1].id
-                : (items.length - 1 > 0 ? items[items.length - 1].id : -1)
+            root.selectedId = idx + 1 < items.length ? items[idx + 1].id
+                : (idx - 1 >= 0 ? items[idx - 1].id : -1)
         }
         function onFailed(message) {
             if (root.toast) root.toast.show("Error: " + String(message || "unknown"), true)

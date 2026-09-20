@@ -34,9 +34,9 @@ RowLayout {
             Layout.leftMargin: index === 0 ? 0 : -1
             implicitWidth: inner.implicitWidth + Style.space(22)
             implicitHeight: Style.spacing.controlHeight
-            color: on ? Style.selectedFillFor(root.foreground, root.accent) : (ma.containsMouse ? Style.hoverFill : "transparent")
+            color: on ? Style.selectedFillFor(root.foreground, root.accent) : (ma.containsMouse ? Style.hoverFillFor(root.foreground, root.accent) : "transparent")
             border.width: 1
-            border.color: on ? Util.alpha(root.foreground, 0.55) : Style.normalBorderColor
+            border.color: on ? Util.alpha(root.foreground, 0.55) : Style.normalBorderFor(root.foreground, root.accent)
             z: on ? 1 : 0
 
             Row {

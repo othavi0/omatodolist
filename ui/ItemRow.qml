@@ -26,7 +26,7 @@ Rectangle {
     radius: Style.cornerRadius
     color: root.selected
         ? Style.selectedFillFor(root.foreground, root.accent)
-        : (rowMouse.containsMouse ? Style.hoverFill : "transparent")
+        : (rowMouse.containsMouse ? Style.hoverFillFor(root.foreground, root.accent) : "transparent")
 
     MouseArea {
         id: rowMouse

@@ -6,17 +6,17 @@ import qs.Ui
 import "Item.js" as ItemJs
 import "Icons.js" as Icons
 
-// Right-hand detail/editor pane: the selected item, or a new-item draft.
-// Owns the title/body fields and their in-pane key routing; selection,
-// dirty-base tracking, db calls and toasts stay in MainTab — this
-// component only shows state and emits what the user asked for.
+// Owns the edit session: which row the fields belong to, what they opened
+// with, and what they hold now. The three only change together, through
+// openItem(), openDraft() and takeEdit(), so the fields can never hold text
+// that belongs to a different row than editingId. MainTab decides when to
+// save, never what the fields hold.
 ColumnLayout {
     id: root
 
     property var item: null
     property bool draft: false
     property string draftType: "note"
-    property bool dirty: false              // existing item's fields differ from its saved base
     property bool deleteArmed: false
     property int nowSeconds: 0
     property color foreground: Color.foreground
@@ -24,6 +24,11 @@ ColumnLayout {
 
     property alias titleText: titleField.text
     property alias bodyText: bodyField.text
+    property int editingId: -1
+    property string _baseTitle: ""
+    property string _baseBody: ""
+    readonly property bool dirty: !root.draft && root.editingId >= 0
+        && (titleField.text !== root._baseTitle || bodyField.text !== root._baseBody)
     readonly property bool titleFocused: titleField.activeFocus
     readonly property bool bodyFocused: bodyField.activeFocus
     readonly property bool unsaved: root.draft || root.dirty
@@ -36,6 +41,28 @@ ColumnLayout {
     signal deleteClicked()
     signal saveRequested()
     signal discardRequested()
+
+    function openItem(it) {
+        root.editingId = it ? Number(it.id) : -1
+        titleField.text = it ? String(it.title || "") : ""
+        bodyField.text = it ? String(it.body || "") : ""
+        root._baseTitle = titleField.text
+        root._baseBody = bodyField.text
+    }
+    function openDraft() { root.openItem(null) }
+
+    // Returns the pending edit and marks it as the new base, or null when
+    // there is nothing to save. An emptied title falls back to the saved
+    // one so the body typed next to it is never thrown away.
+    function takeEdit() {
+        if (!root.dirty) return null
+        var typed = String(titleField.text || "").trim()
+        var title = typed === "" ? root._baseTitle : typed
+        titleField.text = title
+        root._baseTitle = title
+        root._baseBody = bodyField.text
+        return { id: root.editingId, title: title, body: root._baseBody, titleWasEmpty: typed === "" }
+    }
 
     function focusTitle() { titleField.forceActiveFocus() }
     function focusBody() { bodyField.forceActiveFocus() }

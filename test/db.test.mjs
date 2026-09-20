@@ -171,3 +171,19 @@ test("initCommand", () => {
     ["bash", "-c", 'mkdir -p -- "$0" && sqlite3 "$1" "$2"', "/tmp/dir", "/tmp/dir/db.sqlite", Db.SCHEMA]
   )
 })
+
+test("q doubles single quotes", () => {
+  assert.equal(Db.q("Jane's"), "'Jane''s'")
+})
+
+test("likeEscape escapes the backslash first, then the wildcards", () => {
+  assert.equal(Db.likeEscape("50%_a\\b"), "50\\%\\_a\\\\b")
+})
+
+test("listSql neutralizes a quote and a wildcard in the search text", () => {
+  assert.equal(
+    Db.listSql("all", "it's 100%"),
+    "SELECT id, type, title, body, status, created_at, updated_at FROM items"
+    + " WHERE (title LIKE '%it''s 100\\%%' ESCAPE '\\' OR body LIKE '%it''s 100\\%%' ESCAPE '\\')"
+    + " ORDER BY status ASC, updated_at DESC, id DESC")
+})
