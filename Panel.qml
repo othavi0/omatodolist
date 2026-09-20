@@ -8,11 +8,11 @@ import qs.Commons
 import qs.Ui
 import "data" as Data
 import "ui" as Ui
+import "ui/Icons.js" as Icons
 
-// Scratchpad popup: "Notes & Todos" (Phase 2) + "History" (Phase 3).
-// MainTab + HistoryTab + the Toast live here (not in the tabs) so every cross-
-// component reference resolves through this file's "ui" directory import —
-// Quickshell ignores single-file imports.
+// Scratchpad popup: "Items" (notes + todos) and "History" tabs. MainTab +
+// HistoryTab + the Toast live here (not in the tabs) so every cross-
+// component reference resolves through this file's "ui" directory import.
 Panel {
     id: root
     moduleName: "io.github.darksurferza.omatodolist"
@@ -43,6 +43,7 @@ Panel {
             mainTab.commitIfDirty()
             return
         }
+        root.activeTab = 0
         db.load()
         root.resetTabFocus()
         focusPrimeTimer.restart()
@@ -94,19 +95,41 @@ Panel {
             anchors.margins: Style.space(16)
             spacing: Style.space(12)
 
-            TabBar {
-                id: tabBar
+            RowLayout {
                 Layout.fillWidth: true
+                spacing: Style.spacing.xxl
 
-                TabButton {
-                    text: "Notes & Todos"
-                    onClicked: root.activeTab = 0
-                    focusPolicy: Qt.NoFocus
+                Ui.Segment {
+                    Layout.preferredWidth: Style.space(260)
+                    options: [
+                        { value: "items", label: "Items", icon: Icons.all, count: db.totalNotes + db.totalTodos },
+                        { value: "history", label: "History", icon: Icons.history, count: db.history.length }
+                    ]
+                    value: root.activeTab === 0 ? "items" : "history"
+                    foreground: root.contentForeground
+                    onPicked: function(v) { root.activeTab = v === "items" ? 0 : 1 }
                 }
-                TabButton {
-                    text: "History"
-                    onClicked: root.activeTab = 1
-                    focusPolicy: Qt.NoFocus
+
+                Item { Layout.fillWidth: true }
+
+                Text {
+                    text: db.unreadNotes + " unread · " + db.inProgressTodos + " open"
+                    color: Util.alpha(root.contentForeground, 0.62)
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.bodySmall
+                }
+
+                Ui.ActionButton {
+                    bordered: true
+                    selected: true
+                    iconText: Icons.plus
+                    text: "New"
+                    tooltipText: "New item (n)"
+                    foreground: root.contentForeground
+                    onClicked: {
+                        root.activeTab = 0
+                        mainTab.startNew("note")
+                    }
                 }
             }
 
