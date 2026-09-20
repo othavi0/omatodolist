@@ -49,8 +49,6 @@ QtObject {
     property string listQuery: ""
     property bool _listStale: false            // a list() arrived while one was running
 
-    // ------------------------------------------------------------------ signals
-    signal initialized()
     signal itemsUpdated(var items)
     signal countsUpdated()
     signal historyUpdated(var history)
@@ -155,7 +153,6 @@ QtObject {
 
             if (kind === "init") {
                 root.ready = true
-                root.initialized()
                 // (Re)bind the watcher now that the file exists, then load.
                 dbFile.reload()
                 root.load()
@@ -226,11 +223,6 @@ QtObject {
     function init() {
         if (root.ready || root._writeKind === "init") return
         root._enqueue("init", Db.initCommand(root.dataDir, root.dbPath), null)
-    }
-
-    // Current pending counts (spec §3.2).
-    function counts() {
-        return { unreadNotes: root.unreadNotes, inProgressTodos: root.inProgressTodos }
     }
 
     function loadCounts() {

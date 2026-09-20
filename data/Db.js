@@ -138,12 +138,10 @@ function convertTypeSql(id) {
     + " COMMIT;"
 }
 
-// Newest-first history rows (spec §3.3). Capped to keep the table light.
-function historySql(limit) {
-  var n = (limit === undefined || limit === null) ? 500 : Number(limit)
-  if (!isFinite(n) || n <= 0) n = 500
+// Newest-first history rows. Capped to keep the table light.
+function historySql() {
   return "SELECT id, type, title, action, ts FROM history "
-    + "ORDER BY ts DESC, id DESC LIMIT " + Math.floor(n)
+    + "ORDER BY ts DESC, id DESC LIMIT 500"
 }
 
 function deleteHistorySql(id) {
@@ -230,15 +228,10 @@ function parseCounts(text) {
   }
 }
 
-// Parse addSql() output into the new item's id (-1 if absent).
-// Writes run WITHOUT -json, so the output is a plain integer like "2\n";
-// some call sites pass -json arrays, so both forms are handled.
+// Parse addSql() output into the new item's id (-1 if absent). Writes run
+// WITHOUT -json, so the output is a plain integer like "2\n".
 function parseId(text) {
   var t = String(text || "").trim()
   var n = Number(t)
-  if (t !== "" && isFinite(n)) return n
-  var rows = parseRows(t)
-  var row = rows.length > 0 ? rows[0] : {}
-  var id = Number(row.id)
-  return isFinite(id) ? id : -1
+  return (t !== "" && isFinite(n)) ? n : -1
 }
