@@ -7,15 +7,7 @@ import qs.Commons
 import qs.Ui
 import "Item.js" as ItemJs
 
-// "Items" tab: unified list on the left (search + All/Notes/Todos segment,
-// pending-first then recency), and the right-hand pane that doubles as the
-// inline editor — no overlay composer. Selecting a row shows its title+body
-// as editable fields; `n` starts a new-item draft; Tab/Enter move into the
-// pane. The Toast is owned by Panel.qml and injected here (components in
-// this "ui" directory reference each other by type name, same as this
-// plugin author's agent-bar).
-//
-// Keyboard map (preserved):
+// Keyboard map:
 //   list:   j/k or ↑/↓ move · Enter/l/→/Tab edit the selected item
 //           · n new draft · space/c toggle status · d delete (double-press
 //           to confirm) · / focus search · Esc closes the panel
@@ -26,7 +18,6 @@ import "Item.js" as ItemJs
 Item {
     id: root
 
-    // ------------------------------------------------------------------ deps
     property QtObject db: null              // Panel's Data.Db instance
     property var toast: null                // ui/Toast instance (Panel-owned)
     property color foreground: Color.foreground
@@ -34,37 +25,37 @@ Item {
 
     signal closeRequested()                 // Esc in the list closes the panel
 
-    // ------------------------------------------------------------------ state
     property string filterType: "all"       // all | note | todo
     property int selectedId: -1
     property bool draftNew: false           // right pane holds a new-item draft
     property string draftType: "note"       // draft's type ('note' | 'todo')
-    property int deleteArmId: -1            // -1 = not armed (shared: list `d d` + editor Delete)
+    property int deleteArmId: -1            // -1 = not armed
     property int nowSeconds: Math.floor(Date.now() / 1000)
 
     readonly property bool deleteArmed: root.deleteArmId >= 0
-    property alias searchText: searchField.text   // settable: also lets callers (tests) type a query
+    property alias searchText: searchField.text
+    property alias editorTitle: editorPane.titleText
+    property alias editorBody: editorPane.bodyText
 
-    // Values the editor opened with, so commit only writes when something
-    // actually changed (keeps "edited" history rows honest).
+    // The item the editor fields belong to, and the values they opened with.
+    // Saves go to editingId, never to the selection: the selection can move
+    // (click, filter, external delete) while the fields still hold an edit.
+    property int editingId: -1
     property string _editBaseTitle: ""
     property string _editBaseBody: ""
 
-    // Test/compat hooks: forward through EditorPane/EmptyState now that the
-    // editor and empty states live in their own components.
-    property alias editorTitle: editorPane.titleText
-    property alias editorBody: editorPane.bodyText
-    readonly property int bodyWrapMode: editorPane.bodyWrapMode
-    readonly property bool editingNow: editorPane.titleFocused || editorPane.bodyFocused
-    readonly property string emptyLabel: (root.itemList.length === 0 && !root.draftNew)
-        ? (root._filtered ? "No matches" : "Nothing here yet")
-        : ""
-
-    // Focus derived from real focus, not a magic int: search/list/editor/draft.
+    readonly property bool editorFocused: editorPane.titleFocused || editorPane.bodyFocused
     readonly property string focusContext: {
         if (searchField.activeFocus) return "search"
-        if (editorPane.titleFocused || editorPane.bodyFocused) return root.draftNew ? "draft" : "editor"
+        if (root.editorFocused) return root.draftNew ? "draft" : "editor"
         return "list"
+    }
+
+    // Focus hops title -> body through a tick with neither focused, so the
+    // save waits one turn and re-checks.
+    onEditorFocusedChanged: {
+        if (root.editorFocused) return
+        Qt.callLater(function() { if (!root.editorFocused) root.commitIfDirty() })
     }
 
     readonly property var hintSets: ({
@@ -77,15 +68,12 @@ Item {
     })
     readonly property var hints: root.deleteArmed ? root.hintSets.deleteArmed : root.hintSets[root.focusContext]
 
-    // Highlighting a different row (j/k/click) refreshes the right-hand
-    // pane to the newly selected item — but never clobbers a draft or an
-    // in-progress edit.
     onSelectedIdChanged: {
-        if (root.draftNew || editorPane.titleFocused || editorPane.bodyFocused) return
+        if (root.draftNew) return
+        root.saveEdit()
         root.refillEditor()
     }
 
-    // ------------------------------------------------------------------ derived
     function indexOfId(items, id) {
         var list = items || []
         for (var i = 0; i < list.length; ++i)
@@ -96,10 +84,9 @@ Item {
     readonly property int selectedIndex: root.indexOfId(root.itemList, root.selectedId)
     readonly property var selectedItem: root.selectedIndex >= 0 ? root.itemList[root.selectedIndex] : null
     readonly property bool _filtered: root.filterType !== "all" || root.searchText.trim() !== ""
-    readonly property bool editorDirty: !root.draftNew && !!root.selectedItem
+    readonly property bool editorDirty: !root.draftNew && root.editingId >= 0
         && (editorPane.titleText !== root._editBaseTitle || editorPane.bodyText !== root._editBaseBody)
 
-    // ------------------------------------------------------------------ actions
     function toggleStatus() {
         if (!root.db || !root.selectedItem) return
         root.db.setStatus(root.selectedItem.id, ItemJs.isDone(root.selectedItem) ? 0 : 1)
@@ -128,7 +115,6 @@ Item {
         if (root.toast) root.toast.show("Deleting — press d again to confirm")
     }
 
-    // ------------------------------------------------------------------ focus
     function focusSearch() { searchField.forceActiveFocus() }
     function focusList() { pump.forceActiveFocus() }
 
@@ -139,7 +125,11 @@ Item {
         root.focusList()
     }
 
-    // ------------------------------------------------------------------ navigation
+    function pickItem(id) {
+        root.selectedId = id
+        root.focusList()
+        listView.positionViewAtIndex(root.selectedIndex, ListView.Center)
+    }
     function moveSelection(delta) {
         var items = root.itemList
         var n = items.length
@@ -150,21 +140,18 @@ Item {
         listView.positionViewAtIndex(next, ListView.Center)
     }
 
-    // ------------------------------------------------------------------ editor
-    // Sync the editor fields to the selected item (used on reset, after data
-    // reloads, and when a draft/edit is discarded). Resolved directly from
-    // selectedId + itemList rather than the selectedItem binding, which can
-    // lag by one step inside onSelectedIdChanged.
+    // Resolved from selectedId + itemList rather than the selectedItem
+    // binding, which lags by one step inside onSelectedIdChanged.
     function refillEditor() {
         var idx = root.indexOfId(root.itemList, root.selectedId)
         var it = idx >= 0 ? root.itemList[idx] : null
+        root.editingId = it ? Number(it.id) : -1
         editorPane.titleText = it ? String(it.title || "") : ""
         editorPane.bodyText = it ? String(it.body || "") : ""
         root._editBaseTitle = editorPane.titleText
         root._editBaseBody = editorPane.bodyText
     }
 
-    // Enter/Tab/l from the list: open the selected item in the editor.
     function focusEditor() {
         root.deleteArmId = -1
         deleteArmTimer.stop()
@@ -175,10 +162,9 @@ Item {
         Qt.callLater(function() { editorPane.focusTitle() })
     }
 
-    // `n`/`a` from the list, or EmptyState's New note/New todo: start a
-    // new-item draft of the given type.
     function startNew(type) {
         if (!root.db) return
+        root.saveEdit()
         root.deleteArmId = -1
         deleteArmTimer.stop()
         root.draftNew = true
@@ -188,57 +174,53 @@ Item {
         Qt.callLater(function() { editorPane.focusTitle() })
     }
 
-    // Auto-save on leaving the editor: Tab from the body, Enter in the body,
-    // or Esc/Backtab from any field all land here — same trigger points as
-    // the editor's explicit Save button. Empty new drafts are discarded.
-    function commitEditor() {
+    // Writes a dirty edit to the item it was typed in. Returns false only
+    // when the edit cannot be saved (empty title).
+    function saveEdit() {
+        if (!root.editorDirty) return true
         var title = String(editorPane.titleText || "").trim()
         var body = String(editorPane.bodyText || "")
+        if (title === "") {
+            if (root.toast) root.toast.show("Title can't be empty")
+            return false
+        }
+        root.db.update(root.editingId, title, body)
+        if (root.toast) root.toast.show("Saved — " + title)
+        editorPane.titleText = title
+        root._editBaseTitle = title
+        root._editBaseBody = body
+        return true
+    }
 
+    // Every way out of the editor lands here: Esc, Tab or Enter from the
+    // body, the Save button, focus leaving the pane, the panel closing.
+    function commitEditor() {
         if (root.draftNew) {
+            var title = String(editorPane.titleText || "").trim()
             root.draftNew = false
             if (title === "") {
                 if (root.toast) root.toast.show("New item needs a title")
                 root.refillEditor()
             } else {
-                root.db.add(root.draftType, title, body)
+                root.db.add(root.draftType, title, String(editorPane.bodyText || ""))
                 if (root.toast) root.toast.show("Added " + root.draftType + " — " + title)
             }
             root.focusList()
             return
         }
-
-        if (!root.selectedItem) {
-            root.refillEditor()
-            root.focusList()
-            return
-        }
-        if (title === "") {
-            if (root.toast) root.toast.show("Title can't be empty")
-            return
-        }
-        if (title !== root._editBaseTitle || body !== root._editBaseBody) {
-            root.db.update(root.selectedItem.id, title, body)
-            if (root.toast) root.toast.show("Saved — " + title)
-        }
-        root.focusList()
+        if (root.saveEdit()) root.focusList()
     }
 
-    // Discard: an existing item reloads its fields from the saved base; a
-    // draft is simply abandoned. Both converge on the same refill.
     function discardEditor() {
         root.draftNew = false
         root.refillEditor()
         root.focusList()
     }
 
-    // Dirtiness is read off the fields rather than focus: closing the panel
-    // releases keyboard focus before this function runs.
     function commitIfDirty() {
         if (root.draftNew || root.editorDirty) root.commitEditor()
     }
 
-    // ------------------------------------------------------------------ keys
     function onListKey(event) {
         if (event.key === Qt.Key_Down || event.key === Qt.Key_J || event.text === "j") {
             root.moveSelection(1); event.accepted = true
@@ -263,7 +245,6 @@ Item {
         }
     }
 
-    // ------------------------------------------------------------------ focus owner
     Item {
         id: pump
         anchors.fill: parent
@@ -271,7 +252,6 @@ Item {
         Keys.onPressed: function(event) { root.onListKey(event) }
     }
 
-    // ------------------------------------------------------------------ search debounce
     Timer {
         id: filterDebounce
         interval: 120
@@ -287,7 +267,6 @@ Item {
         onTriggered: root.nowSeconds = Math.floor(Date.now() / 1000)
     }
 
-    // ------------------------------------------------------------------ layout
     ColumnLayout {
         anchors.fill: parent
         spacing: Style.spacing.xxl
@@ -297,7 +276,6 @@ Item {
             Layout.fillHeight: true
             spacing: Style.spacing.xxl
 
-            // -------- left: search + filter + list ------------------------
             ColumnLayout {
                 Layout.preferredWidth: Style.space(270)
                 Layout.maximumWidth: Style.space(270)
@@ -354,15 +332,11 @@ Item {
                             required property int index
                             width: listView.width
                             item: modelData
-                            selected: index === listView.currentIndex
+                            selected: index === listView.currentIndex && !root.draftNew
                             foreground: root.foreground
                             accent: root.accent
                             nowSeconds: root.nowSeconds
-                            onPicked: {
-                                root.selectedId = modelData.id
-                                root.focusList()
-                                listView.positionViewAtIndex(index, ListView.Center)
-                            }
+                            onPicked: root.pickItem(modelData.id)
                             onToggled: {
                                 if (root.db) root.db.setStatus(modelData.id, ItemJs.isDone(modelData) ? 0 : 1)
                             }
@@ -387,14 +361,12 @@ Item {
                 }
             }
 
-            // -------- separator --------------------------------------------
             Rectangle {
                 Layout.fillHeight: true
                 Layout.preferredWidth: 1
                 color: Util.alpha(root.foreground, 0.10)
             }
 
-            // -------- right: detail + inline editor -------------------------
             EditorPane {
                 id: editorPane
                 visible: !!root.selectedItem || root.draftNew
@@ -453,10 +425,9 @@ Item {
         onTriggered: root.deleteArmId = -1
     }
 
-    // ------------------------------------------------------------------ db sync
     function onItemsSynced() {
         var items = root.itemList
-        var refill = !root.draftNew && !editorPane.titleFocused && !editorPane.bodyFocused
+        var refill = !root.draftNew && !root.editorFocused && !root.editorDirty
         if (root.indexOfId(items, root.selectedId) >= 0) {
             if (refill) root.refillEditor()
             return

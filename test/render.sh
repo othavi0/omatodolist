@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Renders MainTab + HistoryTab (plus the Panel header they sit under) against
+# Renders PanelHeader, MainTab and HistoryTab against
 # a real, seeded sqlite db, offscreen, and checks that every ActionButton,
 # Field, SearchField and Segment is exactly Style.spacing.controlHeight tall
 # (the dev's hard rule: a button with an icon must never be taller than a
@@ -21,30 +21,7 @@ out_dir="${1:-$(mktemp -d)}"
 mkdir -p "$out_dir"
 out_dir="$(cd "$out_dir" && pwd)"
 
-worktree="$(cd "$(dirname "$0")/.." && pwd)"
-shell_root="${OMARCHY_PATH:-/usr/share/omarchy}/shell"
-
-cfg_dir="$(mktemp -d)"
-data_home="$(mktemp -d)"
-trap 'rm -rf "$cfg_dir" "$data_home"' EXIT
-
-ln -s "$shell_root/Commons" "$cfg_dir/Commons"
-ln -s "$shell_root/Ui" "$cfg_dir/Ui"
-ln -s "$worktree/ui" "$cfg_dir/ui"
-ln -s "$worktree/data" "$cfg_dir/data"
-
-mkdir -p "$data_home/omarchy"
-db="$data_home/omarchy/scratchpad.db"
-sqlite3 "$db" < "$worktree/data/schema.sql"
-
-now="$(date +%s)"
-sqlite3 "$db" "INSERT INTO items (type, title, body, status, created_at, updated_at) VALUES
-  ('note', 'Ideas for the panel', 'Tabs the same width, wide search.' || char(10) || 'Shortcut legend never cut off.', 0, $now - 3600, $now - 3600),
-  ('todo', 'Renew the domain', 'Due day 30. Check the card on file first.', 0, $now - 720, $now - 720),
-  ('todo', 'Reply to upstream PR review', '', 0, $now - 10800, $now - 10800),
-  ('note', 'Buy coffee', 'Medium grind, 500g.', 1, $now - 90000, $now - 90000),
-  ('todo', 'Backup scratchpad.db', '', 1, $now - 172800, $now - 172800),
-  ('note', 'ThinkPad lid measurements', '', 1, $now - 432000, $now - 432000);"
+source "$(dirname "$0")/lib/harness.sh"
 
 cat > "$cfg_dir/shell.qml" <<'QML'
 import QtQuick
@@ -54,7 +31,6 @@ import qs.Commons
 import qs.Ui
 import "data" as Data
 import "ui" as Ui
-import "ui/Icons.js" as Icons
 
 ShellRoot {
   id: sr
@@ -145,8 +121,7 @@ ShellRoot {
 
   function captureScene() {
     var name = sr.currentScene
-    var target = sr.activeTab === 1 ? historyTab : mainTab
-    sr.checkHeights(name, target)
+    sr.checkHeights(name, frame)
     frame.grabToImage(function(r) {
       r.saveToFile(sr.outDir + "/" + name + ".png")
       console.log("SHOT " + name + " saved")
@@ -168,33 +143,10 @@ ShellRoot {
         anchors.margins: Style.space(16)
         spacing: Style.space(12)
 
-        RowLayout {
+        Ui.PanelHeader {
           Layout.fillWidth: true
-          spacing: Style.spacing.xxl
-
-          Ui.Segment {
-            Layout.preferredWidth: Style.space(260)
-            options: [
-              { value: "items", label: "Items", icon: Icons.all, count: db.totalNotes + db.totalTodos },
-              { value: "history", label: "History", icon: Icons.history, count: db.history.length }
-            ]
-            value: sr.activeTab === 0 ? "items" : "history"
-            onPicked: function(v) { sr.activeTab = v === "items" ? 0 : 1 }
-          }
-          Item { Layout.fillWidth: true }
-          Text {
-            text: db.unreadNotes + " unread · " + db.inProgressTodos + " open"
-            color: Util.alpha(Color.foreground, 0.62)
-            font.family: Style.font.family
-            font.pixelSize: Style.font.bodySmall
-          }
-          Ui.ActionButton {
-            bordered: true
-            selected: true
-            iconText: Icons.plus
-            text: "New"
-            tooltipText: "New item (n)"
-          }
+          db: db
+          activeTab: sr.activeTab
         }
 
         StackLayout {
@@ -219,4 +171,4 @@ QML
 
 echo "config dir: $cfg_dir"
 echo "output dir: $out_dir"
-XDG_DATA_HOME="$data_home" OUT_DIR="$out_dir" QT_QPA_PLATFORM=offscreen timeout 60 qs -p "$cfg_dir"
+OUT_DIR="$out_dir" run_qs
