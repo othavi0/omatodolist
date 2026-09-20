@@ -43,7 +43,7 @@ Item {
     property int nowSeconds: Math.floor(Date.now() / 1000)
 
     readonly property bool deleteArmed: root.deleteArmId >= 0
-    readonly property string searchText: searchField.text
+    property alias searchText: searchField.text   // settable: also lets callers (tests) type a query
 
     // Values the editor opened with, so commit only writes when something
     // actually changed (keeps "edited" history rows honest).
