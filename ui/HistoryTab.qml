@@ -159,9 +159,10 @@ Item {
         anchors.fill: parent
         spacing: Style.spacing.sm
 
-        // -------- table header --------------------------------------------
         RowLayout {
             Layout.fillWidth: true
+            Layout.leftMargin: Style.spacing.controlPaddingX
+            Layout.rightMargin: Style.spacing.controlPaddingX
             spacing: Style.spacing.sm
 
             Text { Layout.preferredWidth: root.colTypeW; text: "type"; color: Util.alpha(root.foreground, 0.62); font.family: Style.font.family; font.pixelSize: Style.font.caption }

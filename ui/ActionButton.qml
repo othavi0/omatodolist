@@ -8,6 +8,6 @@ import qs.Ui
 // than Style.font.body (12px), so an icon+text button would otherwise grow
 // past a plain text button.
 Button {
-  implicitHeight: Style.spacing.controlHeight
-  iconSize: Style.font.body + 2
+    implicitHeight: Style.spacing.controlHeight
+    iconSize: Style.font.body + 2
 }
