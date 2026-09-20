@@ -112,7 +112,7 @@ Item {
         }
         root.deleteArmId = root.selectedItem.id
         deleteArmTimer.restart()
-        if (root.toast) root.toast.show("Deleting — press d again to confirm")
+        if (root.toast) root.toast.show("Delete again to confirm")
     }
 
     function focusSearch() { searchField.forceActiveFocus() }
@@ -278,6 +278,7 @@ Item {
 
             ColumnLayout {
                 Layout.preferredWidth: Style.space(270)
+                Layout.minimumWidth: Style.space(270)
                 Layout.maximumWidth: Style.space(270)
                 Layout.fillHeight: true
                 spacing: Style.spacing.lg

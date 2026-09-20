@@ -225,7 +225,7 @@ ColumnLayout {
             visible: !root.draft
             bordered: true
             iconText: Icons.trash
-            text: root.deleteArmed ? "Confirm delete" : "Delete"
+            text: root.deleteArmed ? "Confirm" : "Delete"
             foreground: Color.urgent
             onClicked: root.deleteClicked()
         }
