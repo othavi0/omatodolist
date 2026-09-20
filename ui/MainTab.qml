@@ -220,6 +220,17 @@ Item {
         root.focusList()
     }
 
+    // Auto-save for the exits the field key handlers never see: the panel
+    // closing (click outside, bar icon, IPC) and a tab switch. Dirtiness is
+    // read off the fields rather than activeFocus, because closing the panel
+    // drops keyboard focus before this runs.
+    function commitIfDirty() {
+        var dirty = root.draftNew
+            || (!!root.selectedItem
+                && (titleField.text !== root._editBaseTitle || bodyField.text !== root._editBaseBody))
+        if (dirty) root.commitEditor()
+    }
+
     // ------------------------------------------------------------------ keys
     function onKey(event) {
         if (root.focusState !== 2) { handleControlFocusedKey(event); return }
